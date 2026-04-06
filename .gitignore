@@ -1,0 +1,28 @@
+# Data is downloaded on demand from SMARD (see scripts/download_data.py) and is
+# far too large to version. Results/ charts ARE committed -- they are the
+# deliverable shown in the README.
+data/raw/
+data/processed/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Environments
+.venv/
+venv/
+env/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
