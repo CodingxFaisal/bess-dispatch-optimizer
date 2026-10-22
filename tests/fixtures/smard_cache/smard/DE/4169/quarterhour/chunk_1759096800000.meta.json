@@ -1,0 +1,11 @@
+{
+  "attempts": 1,
+  "format_version": 1,
+  "n_null": 0,
+  "n_points": 672,
+  "retrieved_at_utc": "2026-10-22T14:17:52.219292+00:00",
+  "sha256": "deabb958c60ad5d4336193a59b611e2cbe483a601bc86ffe567b0a858bf9899e",
+  "source_created_utc": "2025-10-08T06:26:21.710000+00:00",
+  "status_code": 200,
+  "url": "https://www.smard.de/app/chart_data/4169/DE/4169_DE_quarterhour_1759096800000.json"
+}

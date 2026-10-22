@@ -8,7 +8,7 @@ analytically hand-checked revenue, the cycle cap, and the negative-price trap.
 import numpy as np
 import pytest
 
-from bess.optimize import optimize_dispatch, settle
+from gridflex.optimize import optimize_dispatch, settle
 
 TOL = 1e-6
 
@@ -87,7 +87,8 @@ def test_cycle_limit_actually_binds_without_cap(cfg):
     capped = settle(optimize_dispatch(prices, cfg, e_end="cyclic"), prices, cfg)
     uncapped = settle(
         optimize_dispatch(prices, cfg, e_end="cyclic", cycle_limit_mwh=float("inf")),
-        prices, cfg,
+        prices,
+        cfg,
     )
     assert uncapped.equivalent_full_cycles > capped.equivalent_full_cycles
 
@@ -102,7 +103,8 @@ def test_binary_prevents_negative_price_loop(cfg):
     # pays if the negative price beats the degradation cost of the churn, so we
     # zero out degradation here to isolate the physics of the trap.
     from dataclasses import replace
-    cfg0 = replace(cfg, replacement_cost_eur_per_kwh=0.0)  # c_deg = 0
+
+    cfg0 = replace(cfg, c_deg_eur_per_mwh=0.0)
     prices = np.array([-100.0])
 
     with_binary = optimize_dispatch(prices, cfg0, e_end="cyclic", allow_binary=True)

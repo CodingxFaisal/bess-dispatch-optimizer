@@ -1,0 +1,173 @@
+# =============================================================================
+# GridFlex default configuration (schema_version 1)
+#
+# Every physical, market, data and economic assumption lives here. Units are
+# part of the key names. The file is validated by gridflex.config.models:
+# unknown keys, out-of-range values and inconsistent combinations are rejected.
+# =============================================================================
+schema_version: 1
+
+# -----------------------------------------------------------------------------
+# Battery asset: a 10 MW / 20 MWh (2-hour) lithium-ion (LFP) system.
+# Power limits are measured at the AC grid connection.
+# -----------------------------------------------------------------------------
+battery:
+  charge_power_mw: 10.0
+  discharge_power_mw: 10.0
+  energy_capacity_mwh: 20.0          # nameplate
+  soc_min_fraction: 0.05             # of nameplate
+  soc_max_fraction: 0.95
+  soc_initial_fraction: 0.50
+  efficiency:
+    # AC-to-AC round trip, split symmetrically: eta_charge = eta_discharge
+    # = sqrt(0.86) = 0.9274 (one-way). Use mode: one_way with charge/discharge
+    # to set the legs separately.
+    mode: round_trip_symmetric
+    round_trip: 0.86
+  max_equivalent_full_cycles_per_day: 1.5
+  availability_fraction: 1.0         # not yet used by the optimiser (Stage 3)
+  terminal_soc_policy: cyclic        # cyclic | fixed | free
+  power_measurement_point: ac_grid_connection
+  degradation:
+    # cost [EUR/MWh] = replacement_cost_eur_per_kwh * 1000
+    #                  / (cycle_life_cycles * depth_of_discharge)  = 16.67
+    replacement_cost_eur_per_kwh: 120.0
+    cycle_life_cycles: 8000
+    depth_of_discharge: 0.90
+    cost_basis: ac_discharge
+    source: >-
+      Unsourced placeholder carried over from v0.1.0. Replace with a cited LFP
+      pack replacement cost and cycle-life rating before quoting results.
+
+# -----------------------------------------------------------------------------
+# Market: DE-LU day-ahead (SDAC). Dates are local delivery days (Europe/Berlin).
+# -----------------------------------------------------------------------------
+market:
+  bidding_zone: DE-LU
+  timezone: Europe/Berlin
+  day_ahead_gate_closure_local: "12:00"
+  mtu_regimes:
+    - start_delivery_day: 2018-10-01
+      resolution: hour
+      source: DE-LU bidding zone established 2018-10-01 (first SMARD 4169 chunk).
+    - start_delivery_day: 2025-10-01
+      resolution: quarterhour
+      source: >-
+        SDAC 15-minute MTU go-live, trading day 2025-09-30 for delivery
+        2025-10-01 (NEMO Committee). Verified in SMARD data: from this date the
+        hourly 4169 series is the mean of four distinct quarter-hour prices.
+  price_limits:
+    # Used only as a plausibility envelope by data validation; out-of-range
+    # prices are reported as errors, never clipped.
+    - start_delivery_day: 2018-10-01
+      min_eur_per_mwh: -500.0
+      max_eur_per_mwh: 3000.0
+      source: SDAC harmonised min/max clearing price (NEMO Committee).
+    - start_delivery_day: 2022-05-10
+      min_eur_per_mwh: -500.0
+      max_eur_per_mwh: 4000.0
+      source: >-
+        SDAC HMMCP raised to +4,000 EUR/MWh from 10 May 2022 (NEMO Committee).
+        Sources conflict on a further rise to 5,000 from 20 Sep 2022 (NEMO list)
+        vs "remains at 4,000" (EPEX SPOT, 13 Sep 2022); unresolved, 4,000 kept.
+    - start_delivery_day: 2026-05-29
+      min_eur_per_mwh: -600.0
+      max_eur_per_mwh: 4000.0
+      source: >-
+        SDAC harmonised minimum clearing price -600 EUR/MWh from trading date
+        2026-05-28 (NEMO Committee, 7 May 2026). Max as above (unresolved).
+
+# -----------------------------------------------------------------------------
+# Data: SMARD.de chart-data series (Bundesnetzagentur | SMARD.de, CC BY 4.0).
+# Raw unit "MWh per interval": SMARD reports energy per market time unit; it is
+# converted to mean MW on cleaning (verified: four quarter-hour values sum to
+# the hourly value).
+# availability: values for local delivery day D are public from
+#   (D + day_offset) at local_time. Decision time for the day-ahead auction is
+#   D-1 at day_ahead_gate_closure_local (12:00).
+# -----------------------------------------------------------------------------
+data:
+  smard_base_url: https://www.smard.de/app/chart_data
+  smard_region: DE
+  cache_dir: data/cache
+  offline: false
+  http:
+    timeout_s: 30
+    max_retries: 3
+    backoff_s: 1.0
+    backoff_max_s: 30.0
+    min_interval_s: 0.05
+  cache:
+    index_max_age_minutes: 60
+    open_chunk_max_age_minutes: 360
+    finalisation_lag_days: 14
+  series:
+    price:
+      smard_id: 4169
+      description: Day-ahead price, DE-LU bidding zone (SDAC/EPEX SPOT via SMARD)
+      kind: price
+      raw_unit: EUR/MWh
+      nature: realised
+      availability:
+        day_offset: -1
+        local_time: "13:00"
+        source: >-
+          SDAC results are normally published around 12:45 CET on D-1; 13:00 is
+          used as a cut-off. Delayed or decoupled auctions are not modelled.
+    load_forecast:
+      smard_id: 411
+      description: Day-ahead forecast of total grid load (Netzlast), Germany
+      kind: energy
+      raw_unit: MWh per interval
+      nature: forecast
+      validation_min: 0.0
+      availability:
+        day_offset: -1
+        local_time: "10:00"
+        source: >-
+          ENTSO-E Regulation 543/2013 art. 6.1(b): published no later than 2 h
+          before day-ahead gate closure. Observed: SMARD file covering D+1
+          created 10:00 CEST on 2026-10-22. SMARD stores one vintage only.
+    solar_forecast:
+      smard_id: 125
+      description: Day-ahead forecast of photovoltaic generation, Germany
+      kind: energy
+      raw_unit: MWh per interval
+      nature: forecast
+      validation_min: 0.0
+      availability:
+        day_offset: -1
+        local_time: "18:00"
+        source: >-
+          ENTSO-E art. 14.1(d): day-ahead wind/solar forecast published no later
+          than 18:00 Brussels time on D-1. Observed: SMARD file created 18:07
+          CEST on 2026-10-21. NOT available at the 12:00 gate closure.
+    wind_onshore_forecast:
+      smard_id: 123
+      description: Day-ahead forecast of onshore wind generation, Germany
+      kind: energy
+      raw_unit: MWh per interval
+      nature: forecast
+      validation_min: 0.0
+      availability:
+        day_offset: -1
+        local_time: "18:00"
+        source: As solar_forecast (ENTSO-E art. 14.1(d)).
+    wind_offshore_forecast:
+      smard_id: 3791
+      description: Day-ahead forecast of offshore wind generation, Germany
+      kind: energy
+      raw_unit: MWh per interval
+      nature: forecast
+      validation_min: 0.0
+      availability:
+        day_offset: -1
+        local_time: "18:00"
+        source: As solar_forecast (ENTSO-E art. 14.1(d)).
+
+# -----------------------------------------------------------------------------
+# Economics: investment metrics (payback, NPV) are computed only when every
+# required input is configured. Left unset by default (audit D13).
+# -----------------------------------------------------------------------------
+economics:
+  capex_eur_per_kwh: null
