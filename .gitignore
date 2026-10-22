@@ -1,8 +1,10 @@
-# Data is downloaded on demand from SMARD (see scripts/download_data.py) and is
-# far too large to version. Results/ charts ARE committed -- they are the
-# deliverable shown in the README.
-data/raw/
-data/processed/
+# Market data: raw SMARD payloads are cached on demand under data/cache (see
+# gridflex.data.cache) and are not versioned. The only committed data is the
+# small CC BY 4.0 test fixture in tests/fixtures/.
+/data/
+
+# Fresh run outputs. results/ holds committed, labelled examples only.
+/runs/
 
 # Python
 __pycache__/
@@ -14,6 +16,9 @@ dist/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
 
 # Environments
 .venv/

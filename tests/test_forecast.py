@@ -9,9 +9,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from bess.backtest import run_backtest
-from bess.forecast import get_forecaster
-from bess.forecast.models import MLForecaster
+from gridflex.backtest import run_backtest
+from gridflex.forecast import get_forecaster
+from gridflex.forecast.models import MLForecaster
 
 
 @pytest.fixture
@@ -19,23 +19,28 @@ def synthetic_dataset():
     """80 days of hourly data with a realistic daily + weekly price shape."""
     idx = pd.date_range("2023-01-01", periods=80 * 24, freq="h", tz="Europe/Berlin")
     hour = idx.hour.to_numpy()
-    dow = idx.dayofweek.to_numpy()
+    dow = idx.day_of_week.to_numpy()
     rng = np.random.default_rng(7)
 
     solar = np.clip(np.sin((hour - 6) / 12 * np.pi), 0, None) * 15000
-    wind = 8000 + 4000 * np.sin(np.arange(len(idx)) / 50) + rng.normal(0, 1500, len(idx))
+    wind = (
+        8000 + 4000 * np.sin(np.arange(len(idx)) / 50) + rng.normal(0, 1500, len(idx))
+    )
     load = 50000 + 8000 * np.sin((hour - 8) / 24 * 2 * np.pi) - 5000 * (dow >= 5)
     residual = load - solar - wind
     # Price tracks residual load (the real driver) plus noise.
     price = 20 + residual / 400 + rng.normal(0, 8, len(idx))
 
-    return pd.DataFrame({
-        "price": price,
-        "load_forecast": load,
-        "solar_forecast": solar,
-        "wind_forecast": wind,
-        "residual_load_forecast": residual,
-    }, index=idx)
+    return pd.DataFrame(
+        {
+            "price": price,
+            "load_forecast": load,
+            "solar_forecast": solar,
+            "wind_forecast": wind,
+            "residual_load_forecast": residual,
+        },
+        index=idx,
+    )
 
 
 def test_perfect_foresight_equals_actual(synthetic_dataset):
@@ -79,11 +84,13 @@ def test_backtest_settles_on_realized_prices(cfg, synthetic_dataset):
     # (forecast == reality); a naive one's settled revenue must be <= planned
     # optimism and strictly below perfect.
     df = synthetic_dataset
-    perfect = run_backtest(df, cfg, get_forecaster("perfect"),
-                           "2023-02-01", "2023-02-15")
-    naive = run_backtest(df, cfg, get_forecaster("naive"),
-                         "2023-02-01", "2023-02-15")
+    perfect = run_backtest(
+        df, cfg, get_forecaster("perfect"), "2023-02-01", "2023-02-15"
+    )
+    naive = run_backtest(df, cfg, get_forecaster("naive"), "2023-02-01", "2023-02-15")
 
-    assert perfect.net_revenue_eur == pytest.approx(perfect.planned_revenue_eur, rel=1e-6)
+    assert perfect.net_revenue_eur == pytest.approx(
+        perfect.planned_revenue_eur, rel=1e-6
+    )
     assert naive.net_revenue_eur <= perfect.net_revenue_eur + 1e-6
     assert perfect.schedule.shape[0] == len(perfect.actual)
