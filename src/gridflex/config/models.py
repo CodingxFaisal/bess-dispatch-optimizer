@@ -335,6 +335,30 @@ class DataConfig(StrictModel):
 
 
 # --------------------------------------------------------------------------- #
+# Optimisation                                                                #
+# --------------------------------------------------------------------------- #
+class OptimizationConfig(StrictModel):
+    """Solver settings for the dispatch MILP (see ``gridflex.optimization``).
+
+    A solve counts as successful only when the solver proves optimality within
+    ``mip_rel_gap``. Time-limited incumbents are rejected unless
+    ``accept_time_limited`` is set, and even then only within
+    ``max_accepted_gap``. Every accepted schedule is re-verified by the
+    independent battery feasibility checker using the tolerances below.
+    """
+
+    solver: Literal["highs", "cbc"] = "highs"
+    time_limit_s: PositiveFloat | None = 60.0
+    mip_rel_gap: Annotated[float, Field(ge=0.0, le=1.0)] = 1e-6
+    threads: Annotated[int, Field(ge=1)] = 1
+    accept_time_limited: bool = False
+    max_accepted_gap: Annotated[float, Field(ge=0.0, le=1.0)] = 1e-3
+    feasibility_tol_mw: Annotated[float, Field(gt=0.0)] = 1e-6
+    feasibility_tol_mwh: Annotated[float, Field(gt=0.0)] = 1e-6
+    solver_log: bool = False
+
+
+# --------------------------------------------------------------------------- #
 # Economics                                                                   #
 # --------------------------------------------------------------------------- #
 class EconomicsConfig(StrictModel):
@@ -351,4 +375,5 @@ class GridFlexConfig(StrictModel):
     battery: BatteryConfig
     market: MarketConfig
     data: DataConfig
+    optimization: OptimizationConfig = OptimizationConfig()
     economics: EconomicsConfig = EconomicsConfig()

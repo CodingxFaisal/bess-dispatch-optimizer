@@ -180,6 +180,23 @@ data:
         source: As solar_forecast (ENTSO-E art. 14.1(d)).
 
 # -----------------------------------------------------------------------------
+# Optimisation: dispatch MILP solved with HiGHS (MIT) via PuLP. A schedule is
+# accepted only when optimality is proven within mip_rel_gap, and every
+# accepted schedule is re-checked by the independent physics checker.
+# threads: 1 keeps HiGHS runs deterministic.
+# -----------------------------------------------------------------------------
+optimization:
+  solver: highs                # highs | cbc (CBC is bundled with PuLP)
+  time_limit_s: 60
+  mip_rel_gap: 1.0e-6
+  threads: 1
+  accept_time_limited: false   # reject time-limited incumbents
+  max_accepted_gap: 1.0e-3     # only used when accept_time_limited is true
+  feasibility_tol_mw: 1.0e-6
+  feasibility_tol_mwh: 1.0e-6
+  solver_log: false
+
+# -----------------------------------------------------------------------------
 # Economics: investment metrics (payback, NPV) are computed only when every
 # required input is configured. Left unset by default (audit D13).
 # -----------------------------------------------------------------------------

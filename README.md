@@ -4,7 +4,7 @@ Battery energy storage (BESS) dispatch optimisation and day-ahead market researc
 
 GridFlex turns price forecasts into physically feasible battery schedules and evaluates them against realised market prices. The goal is that every reported number can be traced to source data, asset configuration, model settings and a stated methodology.
 
-> **Status: under reconstruction (Stage 3 of 9 complete).** This repository is being rebuilt from v0.1.0 (`bess-dispatch-optimizer`) following an audit, [docs/AUDIT.md](docs/AUDIT.md).
+> **Status: under reconstruction (Stage 4 of 9 complete).** This repository is being rebuilt from v0.1.0 (`bess-dispatch-optimizer`) following an audit, [docs/AUDIT.md](docs/AUDIT.md).
 >
 > **The v0.1.0 headline results are withdrawn.** The "84.5 % foresight capture" of the gradient-boosting strategy relied on PV and wind forecasts that are only published after the day-ahead bidding deadline. Without them the same model captured 70.8 % in an audit rerun, which is below a seasonal-naive forecast. The old outputs are kept, labelled, in [results/legacy_v0.1.0/](results/legacy_v0.1.0/README.md). New results will be published in `docs/RESULTS.md` once the validated pipeline exists (Stages 6–7).
 >
@@ -26,9 +26,9 @@ GridFlex turns price forecasts into physically feasible battery schedules and ev
 |---|---|---|
 | 1 | Audit and implementation plan | done ([AUDIT](docs/AUDIT.md)) |
 | 2 | Configuration, data contracts, validation | done ([DATA_DICTIONARY](docs/DATA_DICTIONARY.md)) |
-| 3 | Battery physics and hand-verifiable tests | **done** ([MATHEMATICAL_MODEL](docs/MATHEMATICAL_MODEL.md) §2, [VALIDATION](docs/VALIDATION.md)) |
-| 4 | Optimisation model (PuLP + HiGHS) and solver diagnostics | next |
-| 5 | Forecast baselines and leakage tests | |
+| 3 | Battery physics and hand-verifiable tests | done ([MATHEMATICAL_MODEL](docs/MATHEMATICAL_MODEL.md) §2) |
+| 4 | Optimisation model (PuLP + HiGHS) and solver diagnostics | **done** ([MATHEMATICAL_MODEL](docs/MATHEMATICAL_MODEL.md) §3, [VALIDATION](docs/VALIDATION.md)) |
+| 5 | Forecast baselines and leakage tests | next |
 | 6 | Rolling backtest and settlement | |
 | 7 | Financial metrics and sensitivity analysis | |
 | 8 | Streamlit UI and exports | |
@@ -57,12 +57,17 @@ GridFlex turns price forecasts into physically feasible battery schedules and ev
   - cyclic, fixed or explicitly valued free terminal policies;
   - availability derating;
   - an independent feasibility checker that verifies any schedule against all physical limits.
+- **Dispatch optimisation** (`gridflex.optimization`):
+  - a price-taking day-ahead MILP built in PuLP and solved with HiGHS;
+  - per-interval durations, asymmetric power, availability profiles, cycle caps, all three terminal policies, and binary charge/discharge exclusivity;
+  - a `SolveReport` with status, termination reason, objective, dual bound, MIP gap, runtime and solver version;
+  - no schedule is returned unless optimality is proven *and* the independent physics check and objective recomputation both pass.
 - **Information-availability registry** (`gridflex.data.availability`): it knows what was public at the 12:00 gate closure and raises `InformationLeakageError` otherwise.
 - **v0.1 strategies** (perfect foresight, naive, seasonal naive, gradient boosting) still run on top of the new data layer, but they are slated for rewrite in Stages 3–6. The gradient-boosting model no longer uses PV or wind forecasts.
 
 ## Setup
 
-Requires Python 3.12 and [uv](https://docs.astral.sh/uv/). The v0.1 optimiser uses the CBC solver bundled with PuLP, so no separate solver install is needed. HiGHS arrives with Stage 4.
+Requires Python 3.12 and [uv](https://docs.astral.sh/uv/). Both solvers install with the Python dependencies, with no system install: HiGHS (MIT licence, via `highspy`), the default, and CBC (EPL-2.0, bundled with PuLP), used by the v0.1 MILP and available as `optimization.solver: cbc`.
 
 ```bash
 uv sync
@@ -112,7 +117,8 @@ configs/default.yaml        all physical, market, data and economic assumptions
 src/gridflex/config/        pydantic models, loader, config fingerprint
 src/gridflex/data/          SMARD client, raw cache, cleaning, validation, availability, datasets
 src/gridflex/battery/       physics: state equation, throughput/EFC, degradation, feasibility checker
-src/gridflex/optimize/      v0.1 MILP + parameter bridge        (rewrite: Stages 3-4)
+src/gridflex/optimization/  Stage 4 MILP (PuLP + HiGHS), solve reports, verification
+src/gridflex/optimize/      v0.1 MILP + parameter bridge        (retired in Stage 6)
 src/gridflex/forecast/      v0.1 forecasters                    (rewrite: Stage 5)
 src/gridflex/backtest/      v0.1 rolling backtest               (rewrite: Stage 6)
 src/gridflex/analysis/      v0.1 metrics and plots              (rewrite: Stage 7)

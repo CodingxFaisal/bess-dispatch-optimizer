@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from gridflex.battery import BatteryModel
 from gridflex.config.models import CachePolicy, HttpConfig
 from gridflex.data.cache import RawCache
 from gridflex.data.http import HttpClient
@@ -145,3 +146,23 @@ def make_client(
         offline=offline,
         clock=clock,
     )
+
+
+# --------------------------------------------------------------------------- #
+# Hand-checkable batteries for optimisation tests                             #
+# --------------------------------------------------------------------------- #
+def toy_battery(**overrides: object) -> BatteryModel:
+    """1 MW / 10 MWh, lossless, empty start, no degradation, cyclic, no cycle cap."""
+    params: dict[str, object] = dict(
+        charge_power_mw=1.0,
+        discharge_power_mw=1.0,
+        energy_capacity_mwh=10.0,
+        soc_min_mwh=0.0,
+        soc_max_mwh=10.0,
+        initial_energy_mwh=0.0,
+        eta_charge=1.0,
+        eta_discharge=1.0,
+        degradation_cost_eur_per_mwh=0.0,
+    )
+    params.update(overrides)
+    return BatteryModel(**params)  # type: ignore[arg-type]
