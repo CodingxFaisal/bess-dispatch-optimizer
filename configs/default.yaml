@@ -24,9 +24,21 @@ battery:
     # to set the legs separately.
     mode: round_trip_symmetric
     round_trip: 0.86
+  # Equivalent full cycles (EFC). Basis dc_discharge_per_usable:
+  #   EFC = sum(P_discharge * dt / eta_discharge) / (usable energy, 18 MWh)
+  # i.e. energy leaving the cells over the cyclable window. The v0.1 basis was
+  # ac_discharge_per_nameplate (grid-side discharge / 20 MWh). Limits are
+  # pro-rated to the horizon length (1.5 per 24 h).
   max_equivalent_full_cycles_per_day: 1.5
-  availability_fraction: 1.0         # not yet used by the optimiser (Stage 3)
-  terminal_soc_policy: cyclic        # cyclic | fixed | free
+  efc_basis: dc_discharge_per_usable
+  # Deterministic derating of both power limits (expected availability); no
+  # stochastic outages are modelled. A per-interval availability profile can be
+  # passed to gridflex.battery instead.
+  availability_fraction: 1.0
+  # cyclic: end energy = start energy of each optimisation horizon
+  # fixed:  end energy = terminal_soc_fraction * nameplate
+  # free:   end energy unconstrained, valued at terminal_energy_value_eur_per_mwh
+  terminal_soc_policy: cyclic
   power_measurement_point: ac_grid_connection
   degradation:
     # cost [EUR/MWh] = replacement_cost_eur_per_kwh * 1000
@@ -34,7 +46,9 @@ battery:
     replacement_cost_eur_per_kwh: 120.0
     cycle_life_cycles: 8000
     depth_of_discharge: 0.90
-    cost_basis: ac_discharge
+    # dc_discharge: per MWh leaving the cells (P_dis * dt / eta_dis), consistent
+    # with a cell cycle-life rating at the stated depth of discharge.
+    cost_basis: dc_discharge
     source: >-
       Unsourced placeholder carried over from v0.1.0. Replace with a cited LFP
       pack replacement cost and cycle-life rating before quoting results.

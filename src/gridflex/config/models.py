@@ -71,19 +71,28 @@ EfficiencyConfig = Annotated[
 ]
 
 
+DegradationBasis = Literal["dc_discharge", "ac_discharge"]
+EfcBasis = Literal["dc_discharge_per_usable", "ac_discharge_per_nameplate"]
+
+
 class DegradationConfig(StrictModel):
     """Throughput-based degradation cost inputs.
 
     ``cost_eur_per_mwh = replacement_cost_eur_per_kwh * 1000
     / (cycle_life_cycles * depth_of_discharge)``, charged per MWh measured on
-    ``cost_basis``. Only the AC-discharge basis exists until Stage 3 adds the
-    DC-throughput basis recommended by the audit (D11).
+    ``cost_basis``:
+
+    * ``dc_discharge`` (default): energy leaving the cells,
+      ``P_discharge * dt / eta_discharge``. Consistent with a cell cycle-life
+      rating stated at a depth of discharge (audit D11).
+    * ``ac_discharge``: energy delivered at the grid connection (v0.1
+      convention), ``P_discharge * dt``.
     """
 
     replacement_cost_eur_per_kwh: Annotated[float, Field(ge=0.0)]
     cycle_life_cycles: PositiveFloat
     depth_of_discharge: Annotated[float, Field(gt=0.0, le=1.0)]
-    cost_basis: Literal["ac_discharge"] = "ac_discharge"
+    cost_basis: DegradationBasis = "dc_discharge"
     source: str = Field(
         default="unsourced assumption",
         description="Citation or justification for the inputs.",
@@ -106,9 +115,11 @@ class BatteryConfig(StrictModel):
     soc_initial_fraction: Fraction
     efficiency: EfficiencyConfig
     max_equivalent_full_cycles_per_day: Annotated[float, Field(gt=0.0)] | None = None
+    efc_basis: EfcBasis = "dc_discharge_per_usable"
     availability_fraction: Annotated[float, Field(gt=0.0, le=1.0)] = 1.0
     terminal_soc_policy: Literal["cyclic", "fixed", "free"] = "cyclic"
     terminal_soc_fraction: Fraction | None = None
+    terminal_energy_value_eur_per_mwh: float | None = None
     power_measurement_point: Literal["ac_grid_connection"] = "ac_grid_connection"
     degradation: DegradationConfig
 
@@ -136,6 +147,18 @@ class BatteryConfig(StrictModel):
         elif self.terminal_soc_fraction is not None:
             raise ValueError(
                 "terminal_soc_fraction is only allowed with terminal_soc_policy 'fixed'"
+            )
+        if self.terminal_soc_policy == "free":
+            if self.terminal_energy_value_eur_per_mwh is None:
+                raise ValueError(
+                    "terminal_soc_policy 'free' needs an explicit "
+                    "terminal_energy_value_eur_per_mwh (stored energy is otherwise "
+                    "worth nothing and the optimiser would sell it for free)"
+                )
+        elif self.terminal_energy_value_eur_per_mwh is not None:
+            raise ValueError(
+                "terminal_energy_value_eur_per_mwh is only allowed with "
+                "terminal_soc_policy 'free'"
             )
         return self
 

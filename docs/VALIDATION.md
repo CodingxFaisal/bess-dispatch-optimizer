@@ -76,3 +76,58 @@ Command: `uv run python scripts/run_all.py` (12 min 23 s; exit 0; outputs in `ru
 | Duration sweep 1/2/4/8 h | 23,664 / 43,782 / 69,926 / 95,522 €/MW-yr | same | identical |
 
 These figures confirm that the data-layer rewrite did not change the inputs. **They are not GridFlex results.** The v0.1 strategies keep the open defects D2–D4 and D11–D16 until Stages 3–7.
+
+---
+
+## Stage 3: battery physics and hand-verifiable tests (2026-10-23)
+
+**Environment:** as Stage 2 (CPython 3.12.10, `uv.lock` unchanged). Branch `gridflex/stage-3-battery-physics`, uncommitted working tree.
+
+### Automated checks
+
+| Command | Result |
+|---|---|
+| `uv run pytest` | **193 passed**, 5 deselected (network) |
+| `uv run pytest -m network` | 5 passed |
+| `uv run pytest --cov=gridflex` | 90 % total. `battery/feasibility.py` 100 %, `battery/model.py` 100 %, `battery/physics.py` 98 %, `optimize/params.py` 99 % |
+| `uv run ruff check …` / `ruff format --check …` | all passed / 56 files formatted |
+| `uv run mypy` | Success, 28 files (stricter flags also apply to `gridflex.battery.*`) |
+| Clean copy, `uv sync --locked` + pytest | 193 passed |
+
+### Tests added in Stage 3
+
+| File | What it checks (expected values derived by hand in the test comments) |
+|---|---|
+| `tests/battery/test_physics.py` (19) | state equation with $\eta^{ch}=0.9$, $\eta^{dis}=0.8$ over irregular intervals 0.5/0.25/1.0/0.25 h (3.8, 2.8625, 4.6625, 3.4125 MWh); AC/DC throughput, losses, both EFC bases, both degradation bases; energy-balance identity (hand case plus 200 random schedules); RTE applied exactly once (1 MWh in → 0.72 MWh out); lossless reversibility; default-config model; durations from irregular timestamps; 23/24/25 h DST days with the pro-rated cycle limit; quarter-hour intervals; invalid indexes; schedule immutability |
+| `tests/battery/test_feasibility.py` (26) | every violation code from a hand case; limits hit exactly vs exceeded; tolerance edges; initial state; cyclic (relative to the horizon start), fixed and free terminal policies; cycle limit under DC/usable vs AC/nameplate (same schedule: 1.25 EFC fails vs 0.8 EFC passes) and over 12 h vs 24 h; availability profile, scalar and override; NaN/inf; zero or negative durations; invalid models (14 cases) |
+| `tests/battery/test_v01_cross_check.py` (13) | v0.1 MILP schedules on 12 random price days (half 25 h, many negative prices), under both convention sets, pass the independent checker; v0.1 degradation cost equals the physics value (rel 1e-9); the cycle cap binds at exactly 1.5 EFC (DC/usable) |
+| `tests/test_config_battery_conventions.py` (6) | DC defaults; v0.1 bases accepted; `free` requires an explicit terminal value; invalid bases rejected |
+| `tests/test_dispatch_params.py` (13, 2 new) | bridge hand values under DC defaults (17.9721 EUR per AC MWh; 25.0388 AC MWh/day); v0.1 conventions reproduce v0.1 (16.667; 30.0); availability derating |
+
+**Defects found by the hand-calculated tests while writing them:**
+
+1. `interval_hours_from_index` first converted the raw `DatetimeIndex.asi8` integers assuming nanoseconds. Under pandas 3 the index can store microseconds, which made durations 1000× too small. 6 tests failed; the code now uses unit-safe `Timedelta` arithmetic.
+2. One test expectation was my own arithmetic error (0.8 MW × 1.25 h / 0.8 = 1.25 MWh, not 1 MWh). The test was corrected; the code was right.
+
+**Mutation spot-check** (each change reverted afterwards):
+
+| Deliberate fault | Result |
+|---|---|
+| Multiply instead of divide by $\eta^{dis}$ in the state equation | 21 tests fail |
+| Cycle limit not pro-rated to the horizon length | 9 tests fail |
+| Bridge ignores the DC degradation basis | 7 tests fail |
+
+### Real-data check
+
+Command: `uv run python scripts/check_v01_schedules.py --offline --conventions {default|v01}`. This runs the v0.1 perfect-foresight backtest on validated SMARD data for 2023-01-01 → 2024-12-31 and checks every day with the independent checker.
+
+| Conventions | Days feasible (tol 1e-6) | Max per-day SoC gap, MILP vs state equation | 731-day state drift | Mean / max EFC per day | Net revenue (perfect foresight) |
+|---|---|---|---|---|---|
+| default (DC discharge, EFC on usable) | **731 / 731** | 6.05e-7 MWh | 4.80e-5 MWh | 1.229 / 1.5000 | 837,470 EUR (41,816 €/MW-yr) |
+| v0.1 (AC discharge, EFC on nameplate) | **731 / 731** | 5.67e-7 MWh | 4.24e-5 MWh | 1.126 / 1.5000 | 876,837 EUR (43,782 €/MW-yr), identical to v0.1 |
+
+**Interpretation:**
+
+- Under v0.1 conventions the bridge reproduces the v0.1 figure exactly. The default DC conventions lower perfect-foresight net revenue by 4.5 %: degradation is costed per MWh leaving the cells (17.97 instead of 16.67 EUR per AC MWh), and the cap allows 25.04 instead of 30 AC MWh of discharge per day.
+- The state drift exists because v0.1 carries the solver-reported SoC between days (D23). It is fixed in Stage 6.
+- These are v0.1-strategy diagnostics, **not GridFlex results**.

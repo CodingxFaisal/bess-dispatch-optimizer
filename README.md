@@ -4,7 +4,7 @@ Battery energy storage (BESS) dispatch optimisation and day-ahead market researc
 
 GridFlex turns price forecasts into physically feasible battery schedules and evaluates them against realised market prices. The goal is that every reported number can be traced to source data, asset configuration, model settings and a stated methodology.
 
-> **Status: under reconstruction (Stage 2 of 9 complete).** This repository is being rebuilt from v0.1.0 (`bess-dispatch-optimizer`) following an audit, [docs/AUDIT.md](docs/AUDIT.md).
+> **Status: under reconstruction (Stage 3 of 9 complete).** This repository is being rebuilt from v0.1.0 (`bess-dispatch-optimizer`) following an audit, [docs/AUDIT.md](docs/AUDIT.md).
 >
 > **The v0.1.0 headline results are withdrawn.** The "84.5 % foresight capture" of the gradient-boosting strategy relied on PV and wind forecasts that are only published after the day-ahead bidding deadline. Without them the same model captured 70.8 % in an audit rerun, which is below a seasonal-naive forecast. The old outputs are kept, labelled, in [results/legacy_v0.1.0/](results/legacy_v0.1.0/README.md). New results will be published in `docs/RESULTS.md` once the validated pipeline exists (Stages 6–7).
 >
@@ -25,9 +25,9 @@ GridFlex turns price forecasts into physically feasible battery schedules and ev
 | Stage | Scope | State |
 |---|---|---|
 | 1 | Audit and implementation plan | done ([AUDIT](docs/AUDIT.md)) |
-| 2 | Configuration, data contracts, validation | **done** ([DATA_DICTIONARY](docs/DATA_DICTIONARY.md), [VALIDATION](docs/VALIDATION.md)) |
-| 3 | Battery physics and hand-verifiable tests | next |
-| 4 | Optimisation model (PuLP + HiGHS) and solver diagnostics | |
+| 2 | Configuration, data contracts, validation | done ([DATA_DICTIONARY](docs/DATA_DICTIONARY.md)) |
+| 3 | Battery physics and hand-verifiable tests | **done** ([MATHEMATICAL_MODEL](docs/MATHEMATICAL_MODEL.md) §2, [VALIDATION](docs/VALIDATION.md)) |
+| 4 | Optimisation model (PuLP + HiGHS) and solver diagnostics | next |
 | 5 | Forecast baselines and leakage tests | |
 | 6 | Rolling backtest and settlement | |
 | 7 | Financial metrics and sensitivity analysis | |
@@ -39,6 +39,7 @@ GridFlex turns price forecasts into physically feasible battery schedules and ev
 - **Validated configuration** (`gridflex.config`, [configs/default.yaml](configs/default.yaml)):
   - pydantic models with units in the field names;
   - one-way efficiencies (or a round-trip figure split once, never applied twice);
+  - explicit conventions for degradation, cycle counting and terminal energy;
   - dated market rules: 60-minute day-ahead MTU until 2025-09-30 and 15-minute from 2025-10-01, plus harmonised price limits;
   - the SMARD series catalogue with publication-time rules.
 - **SMARD data layer** (`gridflex.data`):
@@ -48,6 +49,14 @@ GridFlex turns price forecasts into physically feasible battery schedules and ev
   - conversion from SMARD's "MWh per interval" to mean MW;
   - UTC identity with Europe/Berlin calendar handling (23 h and 25 h days);
   - validation that reports gaps, nulls, duplicates, off-grid timestamps, resolution mismatches and out-of-range values, and **never fills or invents data**.
+- **Battery physics** (`gridflex.battery`):
+  - the state equation with per-interval durations (handles 23/25 h days and 15-minute intervals);
+  - AC/DC throughput accounting with an energy-balance identity;
+  - equivalent full cycles on a stated basis (default: energy leaving the cells over the usable window);
+  - degradation cost on DC or AC discharge;
+  - cyclic, fixed or explicitly valued free terminal policies;
+  - availability derating;
+  - an independent feasibility checker that verifies any schedule against all physical limits.
 - **Information-availability registry** (`gridflex.data.availability`): it knows what was public at the 12:00 gate closure and raises `InformationLeakageError` otherwise.
 - **v0.1 strategies** (perfect foresight, naive, seasonal naive, gradient boosting) still run on top of the new data layer, but they are slated for rewrite in Stages 3–6. The gradient-boosting model no longer uses PV or wind forecasts.
 
@@ -79,7 +88,7 @@ uv run python scripts/download_data.py --start 2022-01-01 --end 2025-01-01
 uv run python scripts/run_all.py
 ```
 
-Raw SMARD payloads are cached under `data/cache/`, outputs go to `runs/latest/` and nothing is committed. Each script writes a `data_provenance_<tag>.json` next to its outputs. Add `--offline` to `download_data.py` to work only from the cache. Remember that these are v0.1 strategies; see the status note above.
+Raw SMARD payloads are cached under `data/cache/`, outputs go to `runs/latest/` and nothing is committed. Each script writes a `data_provenance_<tag>.json` next to its outputs. Add `--offline` to `download_data.py` to work only from the cache. Remember that these are v0.1 strategies; see the status note above. Since Stage 3 the default conventions charge degradation on energy leaving the cells and count cycles against usable energy, so v0.1-strategy numbers differ from the v0.1 release: perfect foresight for 2023–24 drops from 43,782 to 41,816 €/MW-yr. `scripts/check_v01_schedules.py` verifies every day's schedule with the independent physics checker.
 
 ## Data and attribution
 
@@ -102,13 +111,14 @@ No code is copied from these projects:
 configs/default.yaml        all physical, market, data and economic assumptions
 src/gridflex/config/        pydantic models, loader, config fingerprint
 src/gridflex/data/          SMARD client, raw cache, cleaning, validation, availability, datasets
+src/gridflex/battery/       physics: state equation, throughput/EFC, degradation, feasibility checker
 src/gridflex/optimize/      v0.1 MILP + parameter bridge        (rewrite: Stages 3-4)
 src/gridflex/forecast/      v0.1 forecasters                    (rewrite: Stage 5)
 src/gridflex/backtest/      v0.1 rolling backtest               (rewrite: Stage 6)
 src/gridflex/analysis/      v0.1 metrics and plots              (rewrite: Stage 7)
 scripts/                    CLI entry points; capture_smard_fixtures.py
 tests/                      unit, property and offline fixture tests; data/ for the data layer
-docs/                       AUDIT, DATA_DICTIONARY, VALIDATION (more per stage)
+docs/                       AUDIT, DATA_DICTIONARY, MATHEMATICAL_MODEL, VALIDATION (more per stage)
 results/legacy_v0.1.0/      superseded v0.1 outputs, kept for traceability
 ```
 

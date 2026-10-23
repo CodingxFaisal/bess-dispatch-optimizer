@@ -7,6 +7,20 @@ existing optimiser keeps working while configuration moves to the validated
 rewritten (Stages 3-4).
 
 Efficiencies are one-way: ``eta_charge * eta_discharge`` is the round trip.
+
+The v0.1 MILP charges degradation and caps cycling on *AC discharge* and
+counts cycles against *nameplate* energy. :meth:`from_config` converts the
+configured conventions exactly into that form:
+
+* degradation on ``dc_discharge``: DC discharge = AC discharge / eta_dis, so
+  ``c_deg_ac = c_deg_dc / eta_dis``;
+* cycles on ``dc_discharge_per_usable``: ``N`` EFC per day allows
+  ``N * usable * eta_dis`` MWh of AC discharge, i.e.
+  ``max_cycles_per_day = N * usable * eta_dis / nameplate`` in v0.1 units;
+* ``availability_fraction`` derates the single v0.1 power limit.
+
+Fields therefore carry v0.1 semantics (AC discharge, nameplate cycles); the
+independent checker in :mod:`gridflex.battery` verifies the equivalence.
 """
 
 from __future__ import annotations
@@ -60,6 +74,7 @@ class DispatchParams:
         represent (asymmetric power, non-cyclic terminal policy).
         """
         b = cfg.battery
+        eta_dis = b.efficiency.discharge
         if b.charge_power_mw != b.discharge_power_mw:
             raise ConfigError(
                 "the v0.1 optimiser needs charge_power_mw == discharge_power_mw; "
@@ -70,16 +85,26 @@ class DispatchParams:
                 "the v0.1 backtest supports terminal_soc_policy 'cyclic' only"
             )
         cycles = b.max_equivalent_full_cycles_per_day
+        if cycles is None:
+            max_cycles = math.inf
+        elif b.efc_basis == "dc_discharge_per_usable":
+            usable = b.soc_max_mwh - b.soc_min_mwh
+            max_cycles = cycles * usable * eta_dis / b.energy_capacity_mwh
+        else:
+            max_cycles = cycles
+        c_deg = b.degradation.cost_eur_per_mwh
+        if b.degradation.cost_basis == "dc_discharge":
+            c_deg = c_deg / eta_dis
         return cls(
-            power_mw=b.charge_power_mw,
+            power_mw=b.charge_power_mw * b.availability_fraction,
             energy_mwh=b.energy_capacity_mwh,
             eta_charge=b.efficiency.charge,
-            eta_discharge=b.efficiency.discharge,
+            eta_discharge=eta_dis,
             soc_min_frac=b.soc_min_fraction,
             soc_max_frac=b.soc_max_fraction,
             soc_init_frac=b.soc_initial_fraction,
-            max_cycles_per_day=math.inf if cycles is None else cycles,
-            c_deg_eur_per_mwh=b.degradation.cost_eur_per_mwh,
+            max_cycles_per_day=max_cycles,
+            c_deg_eur_per_mwh=c_deg,
             delta_t_hours=delta_t_hours,
             capex_eur_per_kwh=cfg.economics.capex_eur_per_kwh,
         )

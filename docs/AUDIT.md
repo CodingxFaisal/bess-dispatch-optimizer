@@ -2,7 +2,7 @@
 
 **Subject:** `CodingxFaisal/bess-dispatch-optimizer` @ `078d3f4` (3 commits, branch `main`)
 **Audit date:** 2026-10-22
-**Status:** Approved 2026-10-22 with all recommended decisions in §14. Sections 0–14 are the audit as approved; §15 records findings made during Stage 2. The defect IDs (D1–D22) are referenced from code comments and later docs.
+**Status:** Approved 2026-10-22 with all recommended decisions in §14. Sections 0–14 are the audit as approved; §15 records findings made during later stages. The defect IDs (D1–D23) are referenced from code comments and later docs.
 
 ---
 
@@ -295,11 +295,23 @@ Key design decisions:
 
 ---
 
-## 15. Addendum: findings during Stage 2
+## 15. Addendum: findings after approval
 
 | ID | Sev. | Area | Finding | Evidence | Resolution |
 |---|---|---|---|---|---|
 | **D20** | Medium | Units | SMARD load and generation series are **energy per market time unit (MWh per interval)**, not MW. The v0.1 code labelled them MW, which is numerically right only at hourly resolution; quarter-hour values are one quarter of mean MW. | Live check 2026-10-22: for series 411, 125, 123, 3791 and 410, four quarter-hour values sum to the hourly value (ratio 1.0000 over 48 h). | Cleaning converts to mean MW (`gridflex.data.clean`). Covered by `tests/data/test_clean.py`, the fixture test, and the opt-in live test. |
 | D21 | Low | Market rules | Day-ahead price limits change over time. The harmonised minimum became −600 EUR/MWh from trading date 2026-05-28. Sources conflict on whether the maximum rose from +4,000 to +5,000 EUR/MWh in Sep 2022. | NEMO Committee SDAC page; EPEX SPOT notice of 13 Sep 2022. | Dated `market.price_limits` envelope; violations are errors, never clipped. The conflict is documented and still unresolved. |
 | D22 | Low | Repo hygiene | A `.gitignore` entry `data/` (carried over from v0.1, which used `data/raw`) would also have ignored `src/gridflex/data/` and `tests/data/`. | `git status` during Stage 2. | Anchored to `/data/` and `/runs/`. |
+| D23 | Low | Backtest state | The v0.1 backtest starts each day from the solver-reported SoC variable instead of the state-equation energy of the committed schedule. | Stage 3 real-data check (`scripts/check_v01_schedules.py`, 2023–2024): the two agree to 6e-7 MWh within a day but differ by 4.8e-5 MWh after 731 days. | Stage 6 carries the physically simulated state (MATHEMATICAL_MODEL §2.6). |
+
+### Resolution status
+
+| ID | Status | Where |
+|---|---|---|
+| D1, D5–D9, D19–D22 | resolved | Stage 2 |
+| D11 (AC/DC basis, EFC definition) | resolved: selectable, DC/usable default, bridge converts exactly | Stage 3; MATHEMATICAL_MODEL §2.4–2.5 |
+| D12 (terminal policy) | physics and config resolved (cyclic, fixed, free with explicit value); optimiser support follows | Stages 3–4 |
+| D13 | partially resolved (payback only when capex is configured) | Stage 2; full in Stage 7 |
+| D16 | README claims withdrawn | Stage 2 |
+| D2, D3, D4, D10, D14, D15 (run metadata), D17, D18, D23 | open | Stages 4–6 |
 
