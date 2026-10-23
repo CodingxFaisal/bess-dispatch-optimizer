@@ -85,7 +85,21 @@ Outputs go to `runs/latest/backtest/`: `daily.csv`, `intervals.csv`, `summary.cs
 - **`MarketRegimeError`.** The requested days cross 2025-10-01. Split the window at the switch to 15-minute products.
 - **`DataValidationError`.** The message lists each failing check. Nothing is filled automatically; investigate the source data, or rerun with `--refresh` if a cached chunk might be outdated.
 
-## 6. Regenerating the test fixture
+## 6. Financial metrics and sensitivity
+
+```bash
+uv run python scripts/run_finance.py
+```
+
+```bash
+uv run python scripts/run_sensitivity.py --offline
+```
+
+- `run_finance.py` reads `runs/latest/backtest/` and writes `finance/`, which holds the summary, year and month tables, capture tables and `investment.json`. It stops if the backtest's config fingerprint differs from the current config (`--force` overrides).
+- Investment metrics stay "not computed" until the `economics.investment` inputs are set in the config.
+- `run_sensitivity.py` writes `runs/latest/sensitivity/sensitivity.csv`.
+
+## 7. Regenerating the test fixture
 
 Only needed if the fixture must change; this downloads from SMARD.
 

@@ -486,6 +486,50 @@ class BacktestConfig(StrictModel):
 # --------------------------------------------------------------------------- #
 # Economics                                                                   #
 # --------------------------------------------------------------------------- #
+class InvestmentConfig(StrictModel):
+    """Inputs for investment metrics. Every field defaults to *unset*.
+
+    * Simple payback needs ``capex_eur_per_kwh`` and ``fixed_om_eur_per_kw_year``
+      (0 must be stated explicitly).
+    * NPV additionally needs ``horizon_years``, ``discount_rate`` and a
+      ``replacement`` policy. ``covered_by_degradation_cost`` keeps the
+      throughput degradation charge in the annual cash flow and models no
+      replacement. ``explicit`` instead adds back the degradation charge and
+      models a replacement of ``replacement_cost_eur_per_kwh`` in
+      ``replacement_year``, so cell wear is never counted twice.
+    """
+
+    capex_eur_per_kwh: Annotated[float, Field(gt=0.0)] | None = None
+    capex_eur_per_kw: Annotated[float, Field(ge=0.0)] | None = None
+    fixed_om_eur_per_kw_year: Annotated[float, Field(ge=0.0)] | None = None
+    horizon_years: Annotated[int, Field(ge=1, le=50)] | None = None
+    discount_rate: Annotated[float, Field(gt=-1.0, lt=1.0)] | None = None
+    replacement: Literal["covered_by_degradation_cost", "explicit"] | None = None
+    replacement_year: Annotated[int, Field(ge=1)] | None = None
+    replacement_cost_eur_per_kwh: Annotated[float, Field(ge=0.0)] | None = None
+    source: str = "not configured"
+
+    @model_validator(mode="after")
+    def _replacement(self) -> InvestmentConfig:
+        explicit = (self.replacement_year, self.replacement_cost_eur_per_kwh)
+        if self.replacement == "explicit":
+            if None in explicit:
+                raise ValueError(
+                    "replacement 'explicit' needs replacement_year and "
+                    "replacement_cost_eur_per_kwh"
+                )
+            year = self.replacement_year
+            if (
+                year is not None
+                and self.horizon_years is not None
+                and year > self.horizon_years
+            ):
+                raise ValueError("replacement_year must lie within horizon_years")
+        elif any(v is not None for v in explicit):
+            raise ValueError("replacement_year/cost need replacement 'explicit'")
+        return self
+
+
 class EconomicsConfig(StrictModel):
     """Operating-cost and investment inputs.
 
@@ -497,7 +541,42 @@ class EconomicsConfig(StrictModel):
 
     trading_cost_eur_per_mwh: Annotated[float, Field(ge=0.0)] = 0.0
     trading_cost_source: str = "not modelled (0)"
-    capex_eur_per_kwh: Annotated[float, Field(gt=0.0)] | None = None
+    investment: InvestmentConfig = InvestmentConfig()
+
+
+# --------------------------------------------------------------------------- #
+# Sensitivity                                                                 #
+# --------------------------------------------------------------------------- #
+class SensitivityConfig(StrictModel):
+    """One-at-a-time sensitivity around the configured battery.
+
+    Each listed value replaces the base value of one parameter; all other
+    inputs stay at the base configuration. ``power_mw`` keeps the energy
+    capacity fixed (changing duration); ``duration_h`` keeps the power fixed
+    (changing energy). ``max_efc_per_day`` uses ``null`` for "no cap".
+    """
+
+    period: DayPeriod | None = None
+    strategies: list[str] = ["perfect_foresight", "forecast_gbr"]
+    power_mw: list[Annotated[float, Field(gt=0.0)]] = [5.0, 10.0, 20.0]
+    duration_h: list[Annotated[float, Field(gt=0.0)]] = [1.0, 2.0, 4.0]
+    round_trip_efficiency: list[Annotated[float, Field(gt=0.0, le=1.0)]] = [
+        0.80,
+        0.86,
+        0.92,
+    ]
+    degradation_cost_factor: list[Annotated[float, Field(ge=0.0)]] = [
+        0.0,
+        0.5,
+        1.0,
+        2.0,
+    ]
+    max_efc_per_day: list[Annotated[float, Field(gt=0.0)] | None] = [
+        1.0,
+        1.5,
+        2.0,
+        None,
+    ]
 
 
 # --------------------------------------------------------------------------- #
@@ -511,6 +590,7 @@ class GridFlexConfig(StrictModel):
     optimization: OptimizationConfig = OptimizationConfig()
     forecasting: ForecastingConfig | None = None
     backtest: BacktestConfig | None = None
+    sensitivity: SensitivityConfig | None = None
     economics: EconomicsConfig = EconomicsConfig()
 
     @model_validator(mode="after")

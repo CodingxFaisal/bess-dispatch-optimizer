@@ -247,4 +247,28 @@ backtest:
 economics:
   trading_cost_eur_per_mwh: 0.0     # per MWh bought + sold; exchange/clearing fees
   trading_cost_source: not modelled (0); set from the exchange fee schedule if used
-  capex_eur_per_kwh: null
+  # Investment metrics stay "not computed" until every input they need is set.
+  # Payback: capex_eur_per_kwh + fixed_om_eur_per_kw_year.
+  # NPV: additionally horizon_years, discount_rate, replacement policy.
+  investment:
+    capex_eur_per_kwh: null         # installed capex per kWh nameplate
+    capex_eur_per_kw: null          # optional power-related capex per kW
+    fixed_om_eur_per_kw_year: null
+    horizon_years: null
+    discount_rate: null             # real, per year
+    replacement: null               # covered_by_degradation_cost | explicit
+    replacement_year: null
+    replacement_cost_eur_per_kwh: null
+    source: not configured
+
+# -----------------------------------------------------------------------------
+# Sensitivity: one-at-a-time variations around the battery above, run with
+# the listed backtest strategies over the backtest period (or `period`).
+# -----------------------------------------------------------------------------
+sensitivity:
+  strategies: [perfect_foresight, forecast_gbr]
+  power_mw: [5.0, 10.0, 20.0]           # energy fixed at 20 MWh
+  duration_h: [1.0, 2.0, 4.0]           # power fixed at 10 MW
+  round_trip_efficiency: [0.80, 0.86, 0.92]
+  degradation_cost_factor: [0.0, 0.5, 1.0, 2.0]
+  max_efc_per_day: [1.0, 1.5, 2.0, null]

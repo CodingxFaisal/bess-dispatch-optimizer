@@ -8,7 +8,7 @@ Every number here was produced by a command in this repository, run on validated
 |---|---|
 | 1. Day-ahead price forecast accuracy (hourly regime) | Stage 5, below |
 | 2. Dispatch backtest: forecast-driven vs perfect foresight vs heuristic | Stage 6, below |
-| 3. Financial metrics and sensitivity | Stage 7 |
+| 3. Financial metrics and sensitivity | Stage 7, below |
 
 ---
 
@@ -133,3 +133,95 @@ EUR unless stated; totals over 639 days. "Share" is net operating revenue divide
 - **Not a forecast of future revenue.** They are specific to 2024–2025 prices, to the day-ahead-only fixed-schedule design, and to an unsourced degradation cost.
 
 Outputs: `runs/latest/backtest/` contains `daily.csv` (3,195 rows), `intervals.csv` (76,675 rows), `summary.csv` and `metadata.json`. The directory is git-ignored; re-create it with the command above.
+
+---
+
+## 3. Financial metrics and sensitivity
+
+**Run:**
+
+- Commands: `uv run python scripts/run_backtest.py --offline` (505 s), then `uv run python scripts/run_finance.py` and `uv run python scripts/run_sensitivity.py --offline`.
+- Code and config: working tree based on commit `cb48182`, config fingerprint `76690a7fb527…`.
+- The backtest reproduced §2 exactly; the fingerprint changed only because the investment and sensitivity config sections were added.
+
+### 3.1 Metric definitions
+
+All formulas are in `gridflex.finance` (EUR, MWh, MW).
+
+| Metric | Definition |
+|---|---|
+| Net operating revenue | $\sum_d$ (gross revenue − degradation cost − trading cost) over delivery days $d$ (BACKTEST_METHODOLOGY §2.4) |
+| Annualised net | net × 365 / $n_{days}$ (**365-day basis**). Periods under 365 days are flagged `partial_year`, and their annualised values are extrapolations |
+| Net per MW-year | annualised net / rated discharge power (10 MW) |
+| Net per MWh-year | annualised net / nameplate energy capacity (20 MWh) |
+| EFC per day | total equivalent full cycles / $n_{days}$ (DC discharge over usable energy) |
+| **Forecast capture ratio** | net(strategy) / net(perfect foresight), summed over the **same delivery days**, with the same battery, costs, policy and start state. NaN if the benchmark net is ≤ 0. Gross capture is defined the same way on gross revenue |
+| Period tables | calendar month or year totals, with `days` vs `calendar_days` and a `complete` flag; `net_per_mw_eur` is the period total per MW (not annualised) |
+| Simple payback | capex / A, with A = annualised net − fixed O&M; undiscounted. Computed only if `capex_eur_per_kwh` and `fixed_om_eur_per_kw_year` are configured |
+| NPV | −capex + Σ CF_y/(1+r)^y over `horizon_years`. Also needs `discount_rate` and a `replacement` policy. Under `explicit` replacement, the degradation charge is added back and the replacement cost is booked in its year, so wear is not counted twice |
+
+**Not profit, not IRR.** Capital cost, fixed O&M, grid charges and levies, taxes, financing and imbalance risk are outside net operating revenue.
+
+### 3.2 Hold-out financial summary (639 days, 2024-01-01 → 2025-09-30)
+
+| Strategy | Net (EUR) | Annualised net (EUR/yr) | EUR/MW-yr | EUR/MWh-yr | EFC/day | Days with net < 0 | Capture ratio |
+|---|--:|--:|--:|--:|--:|--:|--:|
+| Perfect foresight | 942,903 | 538,591 | 53,859 | 26,930 | 1.245 | 0 | 1.000 |
+| Lasso + MILP | 790,226 | 451,381 | 45,138 | 22,569 | 1.238 | 57 | 0.838 |
+| GBR + MILP | 781,601 | 446,454 | 44,645 | 22,323 | 1.267 | 60 | 0.829 |
+| Persistence + MILP | 712,570 | 407,023 | 40,702 | 20,351 | 1.245 | 75 | 0.756 |
+| Persistence + heuristic | 407,114 | 232,546 | 23,255 | 11,627 | 0.497 | 88 | 0.432 |
+
+The 639-day period is longer than a year, so it is not flagged as partial. Annualisation pools 2024 with January–September 2025, so it inherits that period's seasonal mix.
+
+**By calendar year** (totals, not annualised; 2025 is **incomplete**, 273 of 365 days):
+
+| Strategy | 2024 net | 2024 EUR/MW | 2024 capture | 2025 (Jan–Sep) net | 2025 EUR/MW | 2025 capture |
+|---|--:|--:|--:|--:|--:|--:|
+| Perfect foresight | 470,350 | 47,035 | 1.000 | 472,553 | 47,255 | 1.000 |
+| Lasso + MILP | 376,516 | 37,652 | 0.801 | 413,710 | 41,371 | 0.875 |
+| GBR + MILP | 379,331 | 37,933 | 0.806 | 402,270 | 40,227 | 0.851 |
+| Persistence + MILP | 334,265 | 33,427 | 0.711 | 378,304 | 37,830 | 0.801 |
+| Persistence + heuristic | 189,278 | 18,928 | 0.402 | 217,836 | 21,784 | 0.461 |
+
+**Monthly spread.** Perfect-foresight monthly net ranges from 8,934 EUR (February 2024) to 72,508 EUR (September 2025). GBR's monthly capture ratio ranges from 0.14 (February 2024, the weakest month for spreads) to 0.91 (August 2025). Full tables: `runs/latest/backtest/finance/by_month.csv` and `capture_by_month.csv`.
+
+**Investment metrics** are not computed: `capex_eur_per_kwh` and `fixed_om_eur_per_kw_year` are not configured, and `investment.json` lists the missing inputs. No payback or NPV is claimed.
+
+### 3.3 Sensitivity (one at a time; perfect foresight and GBR + MILP)
+
+Base case: 10 MW / 20 MWh, round-trip efficiency 0.86, degradation 16.67 EUR/DC-MWh, cap 1.5 EFC/day. Net is the total over the 639 days (EUR); capture is GBR relative to perfect foresight under the same variant.
+
+| Parameter | Value | PF net | PF EUR/MW-yr | GBR net | GBR EUR/MW-yr | GBR capture |
+|---|---|--:|--:|--:|--:|--:|
+| power (energy 20 MWh) | 5 MW (4 h) | 779,212 | 89,018 | 673,618 | 76,955 | 0.864 |
+| | **10 MW (2 h)** | 942,903 | 53,859 | 781,601 | 44,645 | 0.829 |
+| | 20 MW (1 h) | 1,008,965 | 28,816 | 822,777 | 23,499 | 0.815 |
+| duration (power 10 MW) | 1 h | 504,482 | 28,816 | 411,388 | 23,499 | 0.815 |
+| | **2 h** | 942,903 | 53,859 | 781,601 | 44,645 | 0.829 |
+| | 4 h | 1,558,424 | 89,018 | 1,347,237 | 76,955 | 0.864 |
+| round-trip efficiency | 0.80 | 857,600 | 48,987 | 692,146 | 39,536 | 0.807 |
+| | **0.86** | 942,903 | 53,859 | 781,601 | 44,645 | 0.829 |
+| | 0.92 | 1,030,811 | 58,880 | 872,946 | 49,863 | 0.847 |
+| degradation cost × | 0 | 1,204,481 | 68,801 | 1,050,696 | 60,016 | 0.872 |
+| | 0.5 | 1,068,779 | 61,049 | 910,365 | 52,001 | 0.852 |
+| | **1** | 942,903 | 53,859 | 781,601 | 44,645 | 0.829 |
+| | 2 | 729,282 | 41,657 | 567,028 | 32,389 | 0.778 |
+| cycle cap (EFC/day) | 1.0 | 856,754 | 48,938 | 712,067 | 40,674 | 0.831 |
+| | **1.5** | 942,903 | 53,859 | 781,601 | 44,645 | 0.829 |
+| | 2.0 | 973,369 | 55,599 | 813,753 | 46,482 | 0.836 |
+| | none | 973,501 | 55,607 | 813,588 | 46,473 | 0.836 |
+
+Base values in bold. Each row is a full 639-day rolling backtest. GBR forecasts are computed once and reused (forecasts do not depend on the battery).
+
+**Checks on these results:**
+
+- **Scale invariance.** 5 MW / 20 MWh is exactly half of 10 MW / 40 MWh (779,212 vs 1,558,424), and 20 MW / 20 MWh is exactly twice 10 MW / 10 MWh. The EUR/MW-yr figures are identical, as they must be for a price taker at the same duration.
+- **Monotonicity.** The perfect-foresight benchmark behaves as theory requires: it falls as degradation cost rises, and rises with power at fixed energy, with a looser cycle cap and with efficiency. The forecast-driven strategy need not be monotone. Removing the cap entirely even lowers GBR slightly (−165 EUR), because a looser constraint lets it act more on a wrong forecast.
+
+**Interpretation:**
+
+- **Duration and power are the dominant levers.** Per MW, a 4-hour battery earns about 1.65× a 2-hour one, and a 1-hour battery about 0.54×. Per MWh of capacity, shorter is better (1 h: 28,816 EUR/MWh-yr; 4 h: 22,254). The trade-off depends on the relative cost of power and energy, which is not configured. Forecast-driven batteries capture more of their benchmark at longer durations (0.815 → 0.864).
+- **Degradation cost is the largest uncertain input.** Moving from 0× to 2× the placeholder value changes forecast-driven net by a factor of 1.85 (1.05 M → 0.57 M EUR) and the cycling rate by about 1.5×. Because this input is an unsourced placeholder, no absolute revenue figure here should be relied on until it is sourced.
+- **The cycle cap binds only below about 2 EFC/day.** Between a cap of 2.0 and no cap, the benchmark gains 0.01 %.
+- **Efficiency matters moderately.** ±0.06 of round-trip efficiency moves net by about ±9 % for perfect foresight and ±12 % for GBR.

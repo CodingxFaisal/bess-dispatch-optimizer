@@ -47,7 +47,7 @@ def test_default_config_values(gf_cfg: GridFlexConfig) -> None:
     assert b.efficiency.charge * b.efficiency.discharge == pytest.approx(0.86)
     # 120 EUR/kWh * 1000 / (8000 * 0.9) = 120000 / 7200 = 16.666... EUR/MWh.
     assert b.degradation.cost_eur_per_mwh == pytest.approx(50.0 / 3.0)
-    assert gf_cfg.economics.capex_eur_per_kwh is None
+    assert gf_cfg.economics.investment.capex_eur_per_kwh is None
     assert gf_cfg.market.day_ahead_gate_closure_local == dt.time(12, 0)
 
 
