@@ -10,6 +10,22 @@ Every number here was produced by a command in this repository, run on validated
 | 2. Dispatch backtest: forecast-driven vs perfect foresight vs heuristic | Stage 6, below |
 | 3. Financial metrics and sensitivity | Stage 7, below |
 
+**Reproduced from a clean environment (Stage 9).** All results in this document were regenerated from scratch, as follows:
+
+- a fresh clone of commit `2f34ab8` (clean tree);
+- `uv sync --locked` into a new virtual environment;
+- an empty data cache, so all SMARD data was downloaded anew;
+- the five pipeline commands, run in 18 minutes in total.
+
+Every output table matched the recorded runs **exactly**: forecast selection, hold-out metrics and all 61,340 hold-out forecasts; the backtest's 3,195 daily and 76,675 interval rows; the finance tables; and all 34 sensitivity rows. Only solver runtimes differ. Commands and timings: [VALIDATION.md](VALIDATION.md), Stage 9.
+
+**Summary.**
+
+- **Forecasting.** Trained forecasts (GBR, LEAR-style Lasso) cut MAE by 31–32 % against seasonal naive and 17–18 % against persistence. GBR and Lasso are statistically indistinguishable.
+- **Dispatch.** Driving the same MILP with those forecasts captures 83–84 % of the perfect-foresight benchmark. Persistence captures 76 %, and the two-window heuristic 43 %.
+- **Main uncertainty in absolute revenue.** Battery duration and the unsourced degradation cost dominate.
+- **Limitations.** These figures are net operating revenue for a day-ahead-only, price-taking 10 MW / 20 MWh battery, not profit. See [LIMITATIONS.md](LIMITATIONS.md).
+
 ---
 
 ## 1. Day-ahead price forecast accuracy

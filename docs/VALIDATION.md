@@ -393,3 +393,78 @@ The browser console showed 404s for `/<page>/_stcore/health` when a page URL was
 ### Finding during Stage 8
 
 **D26.** The pip requirement files were stale since Stage 4 (see AUDIT §15). They have been fixed, are now guarded by a test, and both install routes were verified.
+
+## Stage 9: integration, clean-environment reproduction and documentation (2026-10-23)
+
+**Environment:**
+
+- Windows 11 Pro, Python 3.12.10, uv 0.11.21, dependencies from `uv.lock` (unchanged since Stage 8).
+- Branch `gridflex/stage-9-release`, uncommitted working tree.
+
+### Automated checks
+
+| Command | Result |
+|---|---|
+| `uv run pytest` | **452 passed**, 5 deselected (network) |
+| `uv run pytest --cov=gridflex` | 98 % total; `reporting/example.py` 100 % |
+| `uv run ruff check src tests scripts notebooks app` / `ruff format --check …` | all passed (92 files formatted) |
+| `uv run mypy` | Success, 43 files |
+| Clean copy of the Stage 9 tree (tracked and new files only, no `data/` or `runs/`), `uv sync --locked`, `uv run pytest` | 452 passed |
+| Same clean copy, `uv run python scripts/run_example.py` | completed: 1.5 s inside the script, 7.4 s including `uv run` start-up. Output identical to the working tree's example |
+
+### Tests added in Stage 9
+
+| File | What it checks |
+|---|---|
+| `tests/test_integration.py` (2) | Runs `scripts/run_example.py` as a separate process, as a user would, offline. **Outputs:** all 11 output files are present. **Daily results:** 27 strategy-days, all `ok`; perfect foresight is a daily upper bound for every strategy and is solved to proven optimality; finance capture ratio is 1.0 for the benchmark. **Forecasts:** for every forecast, feature cutoff ≤ origin < delivery interval. **Metadata:** the run is tagged as an example, nothing was downloaded, and no payback is claimed without investment inputs |
+| `tests/reporting/conftest.py` | The Stage 8 UI tests now use the same `build_example_run` as the documented example. This removes a duplicate pipeline and keeps the example and the UI tests from diverging |
+
+### Clean-environment reproduction of the full results
+
+Script `repro.sh`, run 2026-10-23 from 19:41:18 to 20:00:15 UTC:
+
+1. Fresh `git clone` of commit `2f34ab8` (Stage 8, clean tree; Stage 9 changes no modelling code).
+2. `uv sync --locked` into a new virtual environment.
+3. Confirmed that no `data/` directory existed.
+4. Ran the commands below.
+
+| Command | Wall time | Result |
+|---|--:|---|
+| `uv run python scripts/download_data.py --start 2021-01-01 --end 2025-10-01` (online, empty cache) | 35 s | price and load forecast 41,615/41,615 valid intervals |
+| `uv run pytest` | 58 s | 450 passed, 5 deselected |
+| `uv run python scripts/evaluate_forecasts.py --offline` | 6 min 08 s | same models chosen |
+| `uv run python scripts/run_backtest.py --offline` | 3 min 12 s | 0 failed days |
+| `uv run python scripts/run_finance.py` | 6 s | |
+| `uv run python scripts/run_sensitivity.py --offline` | 7 min 37 s | |
+
+**Comparison with the recorded runs in `runs/latest/`.** These were produced by the earlier working trees and summarised in RESULTS. Solver-runtime columns were excluded.
+
+| Output | Rows | Max abs. difference | Text columns |
+|---|--:|--:|---|
+| forecast_evaluation: selection, holdout_metrics, holdout_by_year, dm_tests | 9, 4, 8, 12 | 0 | identical |
+| forecast_evaluation/holdout_forecasts.csv | 61,340 | 0 | identical |
+| backtest: summary, daily, intervals | 5, 3,195, 76,675 | 0 | identical |
+| backtest/finance: summary, by_year, by_month | 5, 10, 105 | 0 | identical |
+| sensitivity/sensitivity.csv | 34 | 0 | identical |
+
+The config fingerprint is the same (`76690a7fb527…`). The reproduced run records `dirty: false` at commit `2f34ab8`. The recorded run had `dirty: true` at `0efe5f6`. **Every number in RESULTS.md is therefore reproduced exactly from a clean environment and a committed tree.**
+
+Runtimes differ from earlier records (backtest 3.2 vs 8.7 min, sensitivity 7.6 vs about 15 min) because of machine load. RUNNING.md now gives ranges.
+
+### Documentation completed
+
+- **New:** `docs/ARCHITECTURE.md` (data-flow diagram, package responsibilities, correctness boundaries, technology and licences) and `docs/LIMITATIONS.md` (market design, physics, data, forecasting, finance, engineering).
+- **README:**
+  - key results, each linked to its RESULTS section;
+  - a one-command example;
+  - a documentation index;
+  - dependency licences;
+  - the lint command now includes `app/`.
+- **RESULTS:** a reproduction statement and summary.
+- **RUNNING:** the minimal example section and measured runtime ranges.
+- **AUDIT:** §16, definition of done.
+
+### Not verified
+
+- **GitHub Actions CI** (Ubuntu and Windows) has not run, because nothing has been pushed.
+- **Linux and macOS** behaviour is untested locally.

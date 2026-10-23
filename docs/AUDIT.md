@@ -327,5 +327,30 @@ Key design decisions:
 | D15 (run metadata) | resolved: git commit and dirty flag, config fingerprint and dump, package versions, provenance in every run | Stage 6 |
 | D18 (tz-aware API) | resolved: the v0.1 API was removed; the new APIs take dates or tz-aware UTC instants | Stage 6 |
 | D23 (state carry) | resolved: the next day starts from the state-equation energy of the committed schedule | Stage 6 |
-| D17 (test gaps) | largely resolved; remaining: UI and finance tests | Stages 7–8 |
+| D26 (stale pip exports) | resolved: regenerated, guarded by `tests/test_packaging.py`, pip and uv clean installs verified | Stage 8 |
+| D17 (test gaps) | resolved: finance (Stage 7), UI and exports (Stage 8), offline end-to-end integration test (Stage 9) | Stages 7–9 |
 
+
+---
+
+## 16. Final status: definition of done (spec §18), Stage 9
+
+| Criterion | Status | Evidence |
+|---|---|---|
+| The data pipeline is documented and validated | met | DATA_DICTIONARY; `tests/data/*`; validation reports in every run (41,615/41,615 valid hourly intervals, 2021-01 → 2025-09) |
+| Physical constraints are tested | met | MATHEMATICAL_MODEL §2; hand-calculated tests in `tests/battery/*`; the independent checker runs on every schedule |
+| Optimisation outputs are feasible and solver status is checked | met | HiGHS native status (D24, D25); physics check and objective recomputation; 3,195/3,195 strategy-days `ok` in the hold-out run |
+| Forecast-driven strategies do not use future information | met | Publication-time guards; corruption test (forecasts unchanged when all post-origin data is altered); PV/wind excluded |
+| Settlement is separate from forecast-based expected revenue | met | `gridflex.settlement`; expected and realised columns reported separately (RESULTS §2.1) |
+| Financial metrics have explicit definitions | met | RESULTS §3.1; payback and NPV only with configured inputs |
+| Results are reproducible | met | Clean clone, `uv sync --locked`, empty cache, full pipeline: every output identical to the recorded runs (VALIDATION Stage 9) |
+| The application runs with the documented example workflow | met | `scripts/run_example.py` (integration test); Streamlit viewer checked in Stage 8 |
+| Tests pass in a clean environment | met locally; **CI not yet run** | Clean copies pass on Windows (uv route in Stage 9, pip route in Stage 8). GitHub Actions (Ubuntu and Windows) needs a push, which has not been made |
+| Known limitations and upstream attribution are documented | met | LIMITATIONS; README (SMARD CC BY 4.0, PyPSA and epftoolbox as methodological references, dependency licences) |
+
+**Open items:**
+
+- **CI on GitHub.** The Stage 9 criterion "CI green" is unverified until the branches are pushed.
+- **Unsourced degradation cost** (LIMITATIONS §2). It must be replaced with a cited value before absolute revenue is quoted.
+- **Research question 4** (uncertainty-aware optimisation) is not answered. Only point forecasts are implemented.
+- **The 15-minute regime** (from 2025-10-01) is supported by the data layer but not yet evaluated.
