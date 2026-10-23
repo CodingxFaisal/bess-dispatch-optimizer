@@ -466,5 +466,5 @@ Runtimes differ from earlier records (backtest 3.2 vs 8.7 min, sensitivity 7.6 v
 
 ### Not verified
 
-- **GitHub Actions CI** (Ubuntu and Windows) has not run, because nothing has been pushed.
+- **GitHub Actions CI** (Ubuntu and Windows) has not run. The branches were pushed and a pull request was opened, closed and reopened. A `push` trigger for `gridflex/**` was added (commit `f4f8b27`). GitHub created no workflow runs in 30 minutes of watching. The repository's Actions settings allow all actions, billing shows no lock, and GitHub Status was operational. The cause is still unknown.
 - **Linux and macOS** behaviour is untested locally.
