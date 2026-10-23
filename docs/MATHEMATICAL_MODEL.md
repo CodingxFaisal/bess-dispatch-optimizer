@@ -1,6 +1,6 @@
 # Mathematical model
 
-Status: §1–2 (battery physics) as of Stage 3, implemented in `gridflex.battery`. §3 (the optimisation model) is written in Stage 4. Until then the v0.1 MILP in `gridflex.optimize.dispatch` remains in use, and its formulation is documented in [AUDIT.md §2](AUDIT.md).
+Status: complete for the physics (§2, Stage 3) and the optimisation model (§3, Stage 4). §2 is implemented in `gridflex.battery`, §3 in `gridflex.optimization`. The v0.1 MILP (`gridflex.optimize.dispatch`) is still used by the v0.1 backtest until Stage 6 replaces it.
 
 ---
 
@@ -135,4 +135,95 @@ Default tolerances are $10^{-6}$ MW and $10^{-6}$ MWh, absolute; for cycles, $10
 
 ## 3. Optimisation model
 
-*To be written in Stage 4 (PuLP formulation solved with HiGHS, solver diagnostics).*
+### 3.1 Scope and assumptions
+
+| Aspect | Assumption |
+|---|---|
+| Market | One market: the DE-LU day-ahead auction, settled at price $\pi_t$ (EUR/MWh) |
+| Price formation | **Price taker**: the battery's own bids do not move $\pi_t$ |
+| Commitment | The optimised schedule is a fixed physical schedule. Price-dependent bid curves are not modelled (AUDIT D16) |
+| Information | $\pi_t$ is whatever the caller passes in: a forecast for forecast-driven dispatch, or realised prices for the perfect-foresight upper benchmark. The optimiser itself never sees realised prices for forecast-driven runs; Stage 6 enforces this |
+| Horizon | One problem per horizon (in the backtest: one local delivery day of 23, 24 or 25 h; or 92, 96 or 100 quarter-hours) |
+
+### 3.2 Decision variables
+
+$P^{ch}_t, P^{dis}_t \ge 0$ (MW), $E_t$ (MWh), and the binary $u_t \in \{0,1\}$ (1 = charging allowed), for $t = 0,\dots,T-1$.
+
+### 3.3 Objective
+
+Maximise the expected net operating value of the horizon (EUR):
+
+$$
+\max\ \underbrace{\sum_t \pi_t \left(P^{dis}_t - P^{ch}_t\right)\Delta t_t}_{\text{market revenue}}
+\;-\; \underbrace{c^{deg} \sum_t q_t P^{dis}_t}_{\text{degradation}}
+\;+\; \underbrace{v^{term}\left(E_{T-1} - E_{start}\right)}_{\text{only for policy } \texttt{free}}
+$$
+
+- $q_t = \Delta t_t / \eta^{dis}$ on the DC basis, or $\Delta t_t$ on the AC basis (§2.5).
+- **Signs.** Discharging sells energy and earns $\pi_t P^{dis}_t \Delta t_t$. Charging buys energy and pays $\pi_t P^{ch}_t \Delta t_t$, which is income when $\pi_t < 0$. No price is clipped or floored.
+- **Terminal value.** Under `free`, the *change* in stored energy is valued, so the initial energy is never free.
+
+### 3.4 Constraints
+
+| Name in model | Constraint |
+|---|---|
+| `soc_balance_t` | $E_t = E_{t-1} + \eta^{ch} P^{ch}_t \Delta t_t - P^{dis}_t \Delta t_t / \eta^{dis}$, with $E_{-1} = E_{start}$ |
+| variable bounds | $\underline E \le E_t \le \overline E$; $\ 0 \le P^{ch}_t \le a_t \bar P^{ch}$; $\ 0 \le P^{dis}_t \le a_t \bar P^{dis}$ |
+| `charge_mode_t` | $P^{ch}_t \le a_t \bar P^{ch} u_t$ |
+| `discharge_mode_t` | $P^{dis}_t \le a_t \bar P^{dis} (1-u_t)$ |
+| `cycle_limit` (if configured) | $\sum_t r_t P^{dis}_t \le N_{day} \frac{H}{24} E^{ref}$, with $r_t$ and $E^{ref}$ from the EFC basis (§2.4) |
+| `terminal_energy` | $E_{T-1} = E_{start}$ (`cyclic`) or $E_{T-1} = E^{term}$ (`fixed`) |
+
+**The binary $u_t$ is required** so that charging and discharging never happen in the same interval. Without it, the LP relaxation profits at sufficiently negative prices by running both at once and burning energy through the losses. A test demonstrates this (one interval at −100 EUR/MWh with $\eta$ = 0.9/0.8): the LP earns 28 EUR with simultaneous operation, and the independent checker rejects that schedule.
+
+Sequential cycling at negative prices **is** physical, and it is allowed. At a flat −30 EUR/MWh the model earns 7.5 EUR per cycle by consuming energy through its losses (hand-calculated test).
+
+Model size per horizon: $4T$ variables ($T$ binary), $3T$ + up to 2 constraints.
+
+### 3.5 Solver and status handling
+
+The model is built with **PuLP** and solved with **HiGHS** (MIT licence, via `highspy`, installed by `uv sync`; no system install). The options come from the `optimization` config section:
+
+- `mip_rel_gap` = 1e-6;
+- `threads` = 1, which keeps runs deterministic;
+- `time_limit_s` = 60.
+
+CBC, bundled with PuLP, is available as `solver: cbc`.
+
+`solve_dispatch` returns a `DispatchSolution` with a `SolveReport`. The report records:
+
+- status, success flag and raw termination text;
+- solver objective, the objective recomputed from the schedule, and the dual bound;
+- relative MIP gap and runtime;
+- model size, the options used, and feasibility codes.
+
+| Status | Meaning | Schedule returned |
+|---|---|---|
+| `optimal` | optimality proven within `mip_rel_gap` | yes |
+| `time_limit_feasible` | time limit with an incumbent | only if `accept_time_limited` and gap ≤ `max_accepted_gap` (default: no) |
+| `time_limit_no_solution` | time limit, no incumbent | no |
+| `infeasible` / `unbounded` | as named | no |
+| `invalid_solution` | the solver's answer failed the independent physics check (§2.7), or its objective disagrees with the recomputed one | no |
+| `error` | solver exception or an unclassified status | no |
+
+**Verification of every accepted schedule.** Each candidate schedule goes through two checks before it is accepted:
+
+1. Power values within the tolerance of zero are snapped to 0, and the schedule is passed through `check_schedule` at 1e-6 MW / 1e-6 MWh.
+2. The objective is recomputed from the schedule, as revenue − degradation + terminal value, and must match the solver's value (relative 1e-6, absolute 1e-4 EUR).
+
+**PuLP caveats found in Stage 4** (AUDIT D24, D25):
+
+- PuLP reports a HiGHS time-limit stop *that has an incumbent* as `LpStatus "Optimal"`. The incumbent tested had a 0.49 % gap.
+- PuLP raises `KeyError` for HiGHS's `kSolutionLimit`.
+
+GridFlex therefore reads HiGHS's native model status and primal-solution status, and maps exceptions to `error`.
+
+**Numerical precision.** On real 2023–2024 daily problems, HiGHS's schedules reproduce its SoC trajectory exactly enough to carry the state with no measurable drift. CBC's solutions, as read back through PuLP, carry about 1e-7 to 1e-5 MWh of round-off. On year-long horizons that exceeds the strict 1e-6 tolerance, which is why HiGHS is the default.
+
+### 3.6 Not modelled (optimisation)
+
+- Multiple markets: intraday and balancing reserves (spec §12, later).
+- Uncertainty: scenarios or quantiles.
+- Bid curves and market impact.
+- Network constraints or fees.
+- Inter-day value of energy beyond the chosen terminal policy.

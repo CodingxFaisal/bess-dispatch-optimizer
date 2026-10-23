@@ -131,3 +131,67 @@ Command: `uv run python scripts/check_v01_schedules.py --offline --conventions {
 - Under v0.1 conventions the bridge reproduces the v0.1 figure exactly. The default DC conventions lower perfect-foresight net revenue by 4.5 %: degradation is costed per MWh leaving the cells (17.97 instead of 16.67 EUR per AC MWh), and the cap allows 25.04 instead of 30 AC MWh of discharge per day.
 - The state drift exists because v0.1 carries the solver-reported SoC between days (D23). It is fixed in Stage 6.
 - These are v0.1-strategy diagnostics, **not GridFlex results**.
+
+---
+
+## Stage 4: optimisation model and solver diagnostics (2026-10-23)
+
+**Environment:**
+
+- As Stage 3, plus `highspy` 1.15.1 (HiGHS 1.15.1, githash 04024d7, MIT licence) added to `uv.lock`.
+- PuLP 3.3.2; CBC bundled with PuLP.
+- Branch `gridflex/stage-4-optimisation`, uncommitted working tree.
+
+### Automated checks
+
+| Command | Result |
+|---|---|
+| `uv run pytest` | **322 passed**, 5 deselected (network), 0 skipped |
+| `uv run pytest -m network` | 5 passed |
+| `uv run pytest --cov=gridflex` | 91 % total. `optimization/formulation.py` 100 %, `problem.py` 96 %, `solve.py` 94 % |
+| `uv run ruff check …` / `ruff format --check …` | all passed |
+| `uv run mypy` | Success, 32 files (stricter flags also apply to `gridflex.optimization.*`) |
+
+### Tests added in Stage 4
+
+| File | What it checks |
+|---|---|
+| `tests/optimization/test_hand_cases.py` (18) | hand-derived optima: simple arbitrage (900); efficiency (16) and break-even (idle at 27, 0.16 at 28); degradation on DC (7) and AC (8.8) bases; negative prices (50, 42.8, 41); flat prices idle (0, 50 EUR/MWh); flat −30 EUR/MWh earns 22.5 through sequential loss-burning; lossless flat price (0); irregular durations (180); fixed terminal (−10); free terminal valued (+10 / 0) including start-energy value; cycle cap (400 → 50); 25 h DST day cap (100·25/24); asymmetric power (200 / 100); availability profile (100); start energy (100 / 0) |
+| `tests/optimization/test_failure_modes.py` (26) | infeasible (HiGHS and CBC); time limit not a success (HiGHS and CBC); D24 reproduced (PuLP "Optimal" on a time-limited incumbent) and not inherited; time-limited acceptance policy (4 cases); solver exception → `error`; real HiGHS `kSolutionLimit` → `error` (D25); corrupted solution → `invalid_solution` with `CHARGE_POWER_LIMIT`; objective mismatch → `invalid_solution`; dropping the binary → simultaneous-operation LP solution (28 EUR) rejected while the MILP idles (0); 11 malformed problems refused before solving, including NaN prices |
+| `tests/optimization/test_cross_checks.py` (77) | **40 random problems vs mode enumeration** with SciPy `linprog` (39 compared, 38 with non-zero dispatch, 1 infeasible correctly reported; random η, asymmetric power, irregular Δt, availability, both bases, cycle caps, all terminal policies); HiGHS vs CBC on 8 daily problems (hourly and quarter-hour); equivalence with the v0.1 MILP on 8 days of 23–25 h; deterministic repeat solves; 20 random problems with feasibility, objective decomposition and populated diagnostics (gap ≤ 1e-6, dual bound ≥ objective) |
+| `tests/test_config_optimization.py` (8) | defaults; 6 invalid settings rejected; no time limit allowed |
+
+**Mutation spot-check** on the formulation (each reverted afterwards; counts are for `tests/optimization`):
+
+| Deliberate fault | Result |
+|---|---|
+| Charge efficiency dropped from the SoC balance | 80 tests fail |
+| Terminal constraint dropped | 65 tests fail |
+| Degradation sign flipped | 79 tests fail |
+| Free-terminal term values $E_{end}$ instead of $E_{end} - E_{start}$ | 24 tests fail |
+
+**Expectation corrected while writing tests.** I had expected a flat −30 EUR/MWh price to leave the battery idle. HiGHS found 22.5 EUR. The hand derivation confirms it: at negative prices, losses are paid consumption, earning 7.5 EUR per sequential cycle. The test now asserts 22.5 and that no interval charges and discharges at once.
+
+### Solver behaviour probes
+
+| Case | HiGHS | CBC (via PuLP) |
+|---|---|---|
+| 2160 h, 0.01 s limit | time_limit_no_solution | time_limit_no_solution |
+| 8760 h, 0.5 s limit | time_limit_feasible (incumbent obj 0, idle), **rejected** | time_limit_no_solution |
+| 8760 h, 60 s limit | optimal in 8.0 s | "Optimal", but **invalid_solution**: SoC up to 5.3e-6 MWh above the maximum; terminal and cycle-limit round-off |
+| same, tolerance 1e-5 | – | accepted; objective within 1.2e-3 EUR of HiGHS |
+
+### Real-data comparison
+
+Command: `uv run python scripts/compare_optimizers.py --offline [--solver cbc]`. Perfect foresight, local delivery days 2023-01-01 → 2024-12-31, daily cyclic terminal policy. The new model starts each day from the physically carried state.
+
+| Solver (new model) | Status | Total objective, new | Total objective, v0.1 MILP | Max per-day difference | MIP gap (max) | Runtime, new | Runtime, v0.1 | Carried start-energy range |
+|---|---|---|---|---|---|---|---|---|
+| HiGHS | **731/731 optimal** (2 × 23 h, 727 × 24 h, 2 × 25 h) | 837,469.67 EUR | 837,469.67 EUR | 3.0e-5 EUR | 6.8e-16 | 11.3 s | 65.2 s | exactly 10.000000000 MWh |
+| CBC | 731/731 optimal | 837,469.56 EUR | 837,469.67 EUR | 1.9e-3 EUR | n/a | 63.6 s | 63.6 s | 9.999999888 – 10.000017664 MWh |
+
+**Interpretation:**
+
+- The new formulation reproduces the v0.1 optimum day by day under identical conventions. HiGHS is about 6× faster than CBC here.
+- With HiGHS, carrying the physical state introduces no drift. With CBC, the round-off in its solutions makes the carried state wander by up to 1.8e-5 MWh, which shifts the two-year total by 0.11 EUR. This is why HiGHS is the default.
+- These are solver diagnostics, **not strategy results**.

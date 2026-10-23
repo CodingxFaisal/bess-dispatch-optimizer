@@ -2,7 +2,7 @@
 
 **Subject:** `CodingxFaisal/bess-dispatch-optimizer` @ `078d3f4` (3 commits, branch `main`)
 **Audit date:** 2026-10-22
-**Status:** Approved 2026-10-22 with all recommended decisions in §14. Sections 0–14 are the audit as approved; §15 records findings made during later stages. The defect IDs (D1–D23) are referenced from code comments and later docs.
+**Status:** Approved 2026-10-22 with all recommended decisions in §14. Sections 0–14 are the audit as approved; §15 records findings made during later stages. The defect IDs (D1–D25) are referenced from code comments and later docs.
 
 ---
 
@@ -303,6 +303,8 @@ Key design decisions:
 | D21 | Low | Market rules | Day-ahead price limits change over time. The harmonised minimum became −600 EUR/MWh from trading date 2026-05-28. Sources conflict on whether the maximum rose from +4,000 to +5,000 EUR/MWh in Sep 2022. | NEMO Committee SDAC page; EPEX SPOT notice of 13 Sep 2022. | Dated `market.price_limits` envelope; violations are errors, never clipped. The conflict is documented and still unresolved. |
 | D22 | Low | Repo hygiene | A `.gitignore` entry `data/` (carried over from v0.1, which used `data/raw`) would also have ignored `src/gridflex/data/` and `tests/data/`. | `git status` during Stage 2. | Anchored to `/data/` and `/runs/`. |
 | D23 | Low | Backtest state | The v0.1 backtest starts each day from the solver-reported SoC variable instead of the state-equation energy of the committed schedule. | Stage 3 real-data check (`scripts/check_v01_schedules.py`, 2023–2024): the two agree to 6e-7 MWh within a day but differ by 4.8e-5 MWh after 731 days. | Stage 6 carries the physically simulated state (MATHEMATICAL_MODEL §2.6). |
+| D24 | High | Solver status | PuLP maps a HiGHS time-limit stop that has an incumbent to `LpStatus "Optimal"` / `"Solution Found"`. Any code trusting PuLP's status would present an unproven schedule as optimal. | Stage 4: 8760 h problem at a 2 s limit, HiGHS "Time limit reached" with gap 0.49 %, PuLP "Optimal" (`tests/optimization/test_failure_modes.py`). | `gridflex.optimization` reads HiGHS's native model status and primal-solution status; time-limited incumbents are rejected by default. |
+| D25 | Low | Solver status | PuLP raises `KeyError` when HiGHS stops on a solution limit (`kSolutionLimit`). | Stage 4 probe (`mip_max_improving_sols=1`). | Solver exceptions are caught and reported as status `error`, with no schedule. |
 
 ### Resolution status
 
@@ -310,8 +312,10 @@ Key design decisions:
 |---|---|---|
 | D1, D5–D9, D19–D22 | resolved | Stage 2 |
 | D11 (AC/DC basis, EFC definition) | resolved: selectable, DC/usable default, bridge converts exactly | Stage 3; MATHEMATICAL_MODEL §2.4–2.5 |
-| D12 (terminal policy) | physics and config resolved (cyclic, fixed, free with explicit value); optimiser support follows | Stages 3–4 |
+| D12 (terminal policy) | resolved: cyclic, fixed, and free with an explicit value, in physics, config and optimiser | Stages 3–4 |
 | D13 | partially resolved (payback only when capex is configured) | Stage 2; full in Stage 7 |
 | D16 | README claims withdrawn | Stage 2 |
-| D2, D3, D4, D10, D14, D15 (run metadata), D17, D18, D23 | open | Stages 4–6 |
+| D3 (failed solves settled) | resolved in the optimiser: no schedule unless proven optimal and independently verified; the v0.1 backtest still uses the v0.1 MILP until Stage 6 | Stage 4; Stage 6 |
+| D24, D25 | resolved | Stage 4 |
+| D2, D4, D10, D14, D15 (run metadata), D17, D18, D23 | open | Stages 5–6 |
 

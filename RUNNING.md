@@ -63,6 +63,16 @@ uv run python scripts/run_all.py
 
 Outputs, including `data_provenance_*.json`, are written to `runs/latest/`.
 
+Diagnostics added in Stages 3–4 (they need cached data; add `--offline` to skip downloads):
+
+```bash
+uv run python scripts/check_v01_schedules.py --offline
+uv run python scripts/compare_optimizers.py --offline
+```
+
+- `check_v01_schedules.py`: every v0.1 schedule vs the independent physics checker.
+- `compare_optimizers.py`: the Stage 4 HiGHS model vs the v0.1 MILP, day by day, with solve reports in `runs/latest/optimizer_comparison.csv`.
+
 ## Troubleshooting
 
 - **Windows: missing modules after install** (for example `No module named 'sklearn.metrics._pairwise_distances_reduction...'` or `pydantic`). The project or virtual-environment path is too long for Windows' 260-character limit, and some package files were not written. Use a shorter path (such as `C:\src\gridflex`) or enable Windows long-path support, then reinstall.
