@@ -92,7 +92,7 @@ warn_redundant_casts = true
 # optimiser / forecast / backtest modules are rewritten in Stages 3-6 and are
 # held to the default (non-strict) level until then.
 [[tool.mypy.overrides]]
-module = ["gridflex.config.*", "gridflex.data.*"]
+module = ["gridflex.config.*", "gridflex.data.*", "gridflex.battery.*"]
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 disallow_untyped_calls = true
