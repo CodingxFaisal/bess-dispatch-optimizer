@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "gridflex/**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: lint, types, tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install (locked)
+        run: uv sync --locked
+
+      - name: Ruff lint
+        run: uv run ruff check src tests scripts notebooks app
+
+      - name: Ruff format
+        run: uv run ruff format --check src tests scripts notebooks app
+
+      - name: mypy
+        run: uv run mypy
+
+      # Offline: uses the committed SMARD fixture; network tests are deselected.
+      - name: pytest
+        run: uv run pytest --cov=gridflex --cov-report=term

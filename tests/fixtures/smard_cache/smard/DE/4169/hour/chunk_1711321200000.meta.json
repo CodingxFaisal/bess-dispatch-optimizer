@@ -1,0 +1,11 @@
+{
+  "attempts": 1,
+  "format_version": 1,
+  "n_null": 0,
+  "n_points": 167,
+  "retrieved_at_utc": "2026-10-22T14:17:51.435132+00:00",
+  "sha256": "133780de84c22d6206d82d57b3da436d6143fea35d1949642efdf5cfa0cac05f",
+  "source_created_utc": "2025-10-07T15:17:57.709000+00:00",
+  "status_code": 200,
+  "url": "https://www.smard.de/app/chart_data/4169/DE/4169_DE_hour_1711321200000.json"
+}

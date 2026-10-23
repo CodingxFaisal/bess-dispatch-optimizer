@@ -1,0 +1,222 @@
+"""Test doubles and helpers shared by the test suite (importable as a module)."""
+
+from __future__ import annotations
+
+import datetime as dt
+import json
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from pathlib import Path
+
+import pandas as pd
+
+from gridflex.battery import BatteryModel
+from gridflex.config.models import CachePolicy, HttpConfig
+from gridflex.data.cache import RawCache
+from gridflex.data.http import HttpClient
+from gridflex.data.smard import SmardClient
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_CONFIG = REPO_ROOT / "configs" / "default.yaml"
+FIXTURE_CACHE = REPO_ROOT / "tests" / "fixtures" / "smard_cache"
+BASE_URL = "https://smard.test/app/chart_data"
+
+
+@dataclass
+class FakeResponse:
+    status_code: int
+    content: bytes = b""
+
+
+@dataclass
+class FakeClock:
+    now: dt.datetime = dt.datetime(2026, 1, 15, 12, 0, tzinfo=dt.UTC)
+
+    def __call__(self) -> dt.datetime:
+        return self.now
+
+    def advance(self, **kwargs: float) -> None:
+        self.now += dt.timedelta(**kwargs)
+
+
+@dataclass
+class FakeSession:
+    """Serves queued responses per URL; records every call.
+
+    ``routes[url]`` is a list consumed in order (the last entry repeats); an
+    entry may be a :class:`FakeResponse` or an exception instance to raise.
+    """
+
+    routes: dict[str, list[FakeResponse | Exception]] = field(default_factory=dict)
+    calls: list[str] = field(default_factory=list)
+    timeouts: list[float] = field(default_factory=list)
+
+    def get(self, url: str, **kwargs: float) -> FakeResponse:
+        self.calls.append(url)
+        self.timeouts.append(kwargs["timeout"])
+        queue = self.routes.get(url)
+        if not queue:
+            return FakeResponse(404, b"not found")
+        item = queue.pop(0) if len(queue) > 1 else queue[0]
+        if isinstance(item, Exception):
+            raise item
+        return item
+
+
+class ForbiddenSession:
+    """Fails the test if any network access is attempted."""
+
+    def get(self, url: str, **kwargs: float) -> FakeResponse:
+        raise AssertionError(f"unexpected network access: {url}")
+
+
+# --------------------------------------------------------------------------- #
+# Synthetic SMARD source                                                      #
+# --------------------------------------------------------------------------- #
+def local_monday_starts(
+    first_monday: dt.date, n_weeks: int, tz: str = "Europe/Berlin"
+) -> list[pd.Timestamp]:
+    return [
+        pd.Timestamp(first_monday + dt.timedelta(weeks=i))
+        .tz_localize(tz)
+        .tz_convert("UTC")
+        for i in range(n_weeks)
+    ]
+
+
+def ms(ts: pd.Timestamp) -> int:
+    return int(ts.timestamp() * 1000)
+
+
+def synthetic_source(
+    session: FakeSession,
+    series_id: int,
+    resolution: str,
+    chunk_starts: list[pd.Timestamp],
+    value: Callable[[pd.Timestamp], float | None],
+    region: str = "DE",
+) -> dict[int, bytes]:
+    """Register index + chunk payloads for a synthetic series; return chunk bytes."""
+    step = pd.Timedelta(minutes=60 if resolution == "hour" else 15)
+    index = {"timestamps": [ms(t) for t in chunk_starts]}
+    session.routes[f"{BASE_URL}/{series_id}/{region}/index_{resolution}.json"] = [
+        FakeResponse(200, json.dumps(index).encode())
+    ]
+    ends = [*chunk_starts[1:], chunk_starts[-1] + pd.Timedelta(days=7)]
+    payloads: dict[int, bytes] = {}
+    for start, end in zip(chunk_starts, ends, strict=True):
+        stamps = pd.date_range(start, end, freq=step, inclusive="left")
+        body = {
+            "meta_data": {"version": 1, "created": ms(start)},
+            "series": [[ms(t), value(t)] for t in stamps],
+        }
+        content = json.dumps(body).encode()
+        payloads[ms(start)] = content
+        name = f"{series_id}_{region}_{resolution}_{ms(start)}.json"
+        url = f"{BASE_URL}/{series_id}/{region}/{name}"
+        session.routes[url] = [FakeResponse(200, content)]
+    return payloads
+
+
+def make_client(
+    cache_dir: Path,
+    session: FakeSession | ForbiddenSession | None,
+    clock: FakeClock,
+    *,
+    offline: bool = False,
+    policy: CachePolicy | None = None,
+    http_cfg: HttpConfig | None = None,
+    sleeps: list[float] | None = None,
+) -> SmardClient:
+    sleep_log = sleeps if sleeps is not None else []
+    http = None
+    if session is not None and not offline:
+        http = HttpClient(
+            session,
+            http_cfg or HttpConfig(min_interval_s=0.0, backoff_s=0.5),
+            sleep=sleep_log.append,
+            clock=clock,
+        )
+    return SmardClient(
+        RawCache(cache_dir),
+        http=http,
+        base_url=BASE_URL,
+        region="DE",
+        policy=policy or CachePolicy(),
+        offline=offline,
+        clock=clock,
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Hand-checkable batteries for optimisation tests                             #
+# --------------------------------------------------------------------------- #
+def toy_battery(**overrides: object) -> BatteryModel:
+    """1 MW / 10 MWh, lossless, empty start, no degradation, cyclic, no cycle cap."""
+    params: dict[str, object] = dict(
+        charge_power_mw=1.0,
+        discharge_power_mw=1.0,
+        energy_capacity_mwh=10.0,
+        soc_min_mwh=0.0,
+        soc_max_mwh=10.0,
+        initial_energy_mwh=0.0,
+        eta_charge=1.0,
+        eta_discharge=1.0,
+        degradation_cost_eur_per_mwh=0.0,
+    )
+    params.update(overrides)
+    return BatteryModel(**params)  # type: ignore[arg-type]
+
+
+# --------------------------------------------------------------------------- #
+# Synthetic market data for forecasting tests                                 #
+# --------------------------------------------------------------------------- #
+def synthetic_market_frame(
+    start_day: str = "2024-01-01", n_days: int = 120, seed: int = 0, freq: str = "h"
+) -> pd.DataFrame:
+    """UTC-indexed frame over whole Europe/Berlin days (DST included).
+
+    price [EUR/MWh] = 60 + 0.002 * (load - 45 000) + 20 * daily shape
+                      - 8 * weekend + N(0, 4);  load_forecast [MW] smooth.
+    """
+    import numpy as np
+
+    start = pd.Timestamp(start_day).tz_localize("Europe/Berlin")
+    end = start + pd.offsets.Day(n_days)
+    local = pd.date_range(start, end, freq=freq, inclusive="left")
+    rng = np.random.default_rng(seed)
+    hour = local.hour + local.minute / 60
+    weekend = (local.day_of_week >= 5).astype(float)
+    load = 45_000 + 8_000 * np.sin((hour - 8) / 24 * 2 * np.pi) - 6_000 * weekend
+    load = (
+        load
+        + 2_000 * np.sin(np.arange(len(local)) / 200)
+        + rng.normal(0, 500, len(local))
+    )
+    price = (
+        60
+        + 0.002 * (load - 45_000)
+        + 20 * np.sin((hour - 13) / 24 * 2 * np.pi)
+        - 8 * weekend
+        + rng.normal(0, 4, len(local))
+    )
+    return pd.DataFrame(
+        {"price": price, "load_forecast": load}, index=local.tz_convert("UTC")
+    )
+
+
+def synthetic_dataset(frame: pd.DataFrame, timezone: str = "Europe/Berlin"):  # type: ignore[no-untyped-def]
+    """Wrap a synthetic UTC frame as a MarketDataset (no SMARD provenance)."""
+    from gridflex.data.dataset import MarketDataset
+
+    local = frame.index.tz_convert(timezone)
+    step = frame.index[1] - frame.index[0]
+    return MarketDataset(
+        frame=frame,
+        resolution="hour" if step == pd.Timedelta(hours=1) else "quarterhour",
+        timezone=timezone,
+        start_day=local[0].date(),
+        end_day=(local[-1] + step).date(),
+        metadata={},
+        reports={},
+    )

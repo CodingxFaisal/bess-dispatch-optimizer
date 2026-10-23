@@ -1,91 +1,146 @@
-# Running this project
-
-Step-by-step setup and run instructions, including a VS Code walk-through.
+# Running GridFlex
 
 ## Prerequisites
 
-- Python 3.10 or newer (developed on 3.13)
-- No API keys or accounts. All data is downloaded from the public
-  [SMARD.de](https://www.smard.de/en) endpoints on first run and cached locally.
+- Python 3.12. `uv` installs it if it is missing.
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) 0.4 or newer.
+- No API keys. SMARD data is public; the first run downloads it into `data/cache/`.
 
-## 1. Get the code and install dependencies
+## 1. Install
 
 ```bash
 git clone https://github.com/CodingxFaisal/bess-dispatch-optimizer.git
 cd bess-dispatch-optimizer
+uv sync
 ```
 
-Create a virtual environment (recommended) and install:
+`uv sync` creates `.venv/` with the exact versions from `uv.lock`. Without uv:
 
 ```bash
 python -m venv .venv
+.venv/Scripts/python -m pip install -r requirements-dev.txt -e .
 ```
 
-Activate it:
+On macOS/Linux use `.venv/bin/python` instead of `.venv/Scripts/python`.
 
-- Windows (PowerShell): `.\.venv\Scripts\Activate.ps1`
-- Windows (cmd): `.\.venv\Scripts\activate.bat`
-- macOS / Linux: `source .venv/bin/activate`
-
-Then:
+## 2. Verify
 
 ```bash
-pip install -r requirements.txt
+uv run pytest
+uv run ruff check src tests scripts notebooks app
+uv run ruff format --check src tests scripts notebooks app
+uv run mypy
 ```
 
-## 2. Open in VS Code
-
-1. `File -> Open Folder...` and select this project folder.
-2. Install the Microsoft **Python** extension if prompted.
-3. Select the interpreter: `Ctrl+Shift+P` -> "Python: Select Interpreter" ->
-   choose the `.venv` you just created.
-4. Open a terminal with `` Ctrl+` ``. It starts in the project root.
-
-You can run any script with the ▶ button in the editor, or from the terminal as
-shown below.
-
-## 3. Reproduce everything
-
-This downloads the data once (a few minutes the first time, then cached) and
-runs all three stages, writing charts and CSVs to `results/`:
+The default test run is fully offline: it uses the committed SMARD fixture. To also check the live SMARD contract (needs internet):
 
 ```bash
-python scripts/run_all.py
+uv run pytest -m network
 ```
 
-## 4. Or run one stage at a time
+## 2a. Minimal end-to-end example (offline, a few seconds)
 
 ```bash
-python scripts/download_data.py         --start 2022-01-01 --end 2025-01-01
-python scripts/run_perfect_foresight.py --start 2022-01-01 --end 2025-01-01
-python scripts/run_backtest.py          --data-start 2022-01-01 --start 2023-01-01 --end 2025-01-01
-python scripts/run_duration_sweep.py    --start 2023-01-01 --end 2025-01-01
+uv run python scripts/run_example.py
 ```
 
-The backtest is the slow step (it solves one small MILP per day and retrains the
-forecast model periodically), typically a few minutes.
+Runs every pipeline stage on the committed SMARD fixture (delivery days 2024-03-30 → 2024-04-07, including the 23-hour clock-change day) and writes `runs/example/`: backtest for three strategies, finance tables, forecast evaluation for two baselines, and a small sensitivity sweep. No network access is needed. The output is a workflow demonstration, not a research result; `backtest/metadata.json` is tagged `"example"`.
 
-## 5. Run the tests
+View it with:
 
 ```bash
-pytest
+GRIDFLEX_RUN_DIR=runs/example uv run streamlit run app/streamlit_app.py
 ```
 
-Expected: **19 passed**. The tests check energy balance, state-of-charge bounds,
-the charge/discharge binary, the cycle cap, and a hand-computed revenue case.
+Sections 3–7 describe the **full historical runs** behind `docs/RESULTS.md`. They need the SMARD download (about 35 s) and 18–30 minutes of computation in total (18 min in the recorded clean reproduction, VALIDATION Stage 9).
 
-## Outputs
+## 3. Data
 
-Everything lands in `results/`:
+```bash
+uv run python scripts/download_data.py --start 2022-01-01 --end 2025-01-01
+```
 
-- `capture_ratio.png`, `ml_dispatch_week.png`, `revenue_by_year.png`,
-  `perfect_revenue_by_year.png`, `duration_sweep.png`, `tier1_dispatch_week.png`
-- `backtest_summary.csv` and per-strategy `daily_*.csv`
+The script prints one validation report per series. Any price gap, duplicate or out-of-range value aborts the run; nothing is filled.
+
+Flags:
+
+- `--refresh` re-downloads everything, ignoring the cache policy.
+- `--offline` uses only `data/cache/`.
+
+Windows must stay within one market time-unit regime: before 2025-10-01 (hourly) or from 2025-10-01 onward (15-minute).
+
+## 4. Forecast evaluation
+
+```bash
+uv run python scripts/download_data.py --start 2021-01-01 --end 2025-10-01
+```
+
+```bash
+uv run python scripts/evaluate_forecasts.py --offline
+```
+
+Selects models on 2023 and scores them once on 2024-01-01 → 2025-09-30. This takes about 6 minutes. Outputs go to `runs/latest/forecast_evaluation/`; results are summarised in `docs/RESULTS.md` §1.
+
+## 5. Backtest
+
+```bash
+uv run python scripts/run_backtest.py --offline
+```
+
+Runs the strategies in `backtest:` (configs/default.yaml) over the configured period; this takes 3–9 minutes for 5 strategies × 639 days, depending on machine load. Options:
+
+- `--start` / `--end` to change the period;
+- `--strategies a,b` to run a subset;
+- `--out` to choose the output directory.
+
+Outputs go to `runs/latest/backtest/`: `daily.csv`, `intervals.csv`, `summary.csv` and `metadata.json`. Results are summarised in `docs/RESULTS.md` §2.
 
 ## Troubleshooting
 
-- **Import errors running a script directly:** run from the project root. The
-  scripts add `src/` to the path themselves, so `python scripts/run_backtest.py`
-  works without installing the package.
-- **First run is slow:** it is downloading ~3 years of hourly data from SMARD.
-  Subsequent runs read the local cache in `data/`.
+- **Windows: missing modules after install** (for example `No module named 'sklearn.metrics._pairwise_distances_reduction...'` or `pydantic`). The project or virtual-environment path is too long for Windows' 260-character limit, and some package files were not written. Use a shorter path (such as `C:\src\gridflex`) or enable Windows long-path support, then reinstall.
+- **`MarketRegimeError`.** The requested days cross 2025-10-01. Split the window at the switch to 15-minute products.
+- **`DataValidationError`.** The message lists each failing check. Nothing is filled automatically; investigate the source data, or rerun with `--refresh` if a cached chunk might be outdated.
+
+## 6. Financial metrics and sensitivity
+
+```bash
+uv run python scripts/run_finance.py
+```
+
+```bash
+uv run python scripts/run_sensitivity.py --offline
+```
+
+- `run_finance.py` reads `runs/latest/backtest/` and writes `finance/`, which holds the summary, year and month tables, capture tables and `investment.json`. It stops if the backtest's config fingerprint differs from the current config (`--force` overrides).
+- Investment metrics stay "not computed" until the `economics.investment` inputs are set in the config.
+- `run_sensitivity.py` writes `runs/latest/sensitivity/sensitivity.csv`.
+
+## 7. User interface
+
+```bash
+uv run streamlit run app/streamlit_app.py
+```
+
+- A read-only viewer of `runs/latest/`. Set another run directory in the sidebar or with the `GRIDFLEX_RUN_DIR` environment variable.
+- Pages whose outputs are missing say which script produces them.
+- Downloads: CSV tables, the run configuration (YAML) and the run metadata (JSON).
+
+## 8. Regenerating the pip requirement files
+
+After any dependency change, regenerate both files. `tests/test_packaging.py` fails if they fall out of sync.
+
+```bash
+uv export --no-hashes --no-dev --no-emit-project --format requirements-txt -o requirements.txt
+```
+
+```bash
+uv export --no-hashes --no-emit-project --format requirements-txt -o requirements-dev.txt
+```
+
+## 9. Regenerating the test fixture
+
+Only needed if the fixture must change; this downloads from SMARD.
+
+```bash
+uv run python scripts/capture_smard_fixtures.py
+```

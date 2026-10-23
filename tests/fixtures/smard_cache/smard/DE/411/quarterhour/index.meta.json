@@ -1,0 +1,11 @@
+{
+  "attempts": 1,
+  "format_version": 1,
+  "n_null": null,
+  "n_points": null,
+  "retrieved_at_utc": "2026-10-22T14:17:52.272966+00:00",
+  "sha256": "b631e946c024012bdf675ac650f8264a4d8e06b4fd02be49fa025d0af1e193a3",
+  "source_created_utc": null,
+  "status_code": 200,
+  "url": "https://www.smard.de/app/chart_data/411/DE/index_quarterhour.json"
+}
