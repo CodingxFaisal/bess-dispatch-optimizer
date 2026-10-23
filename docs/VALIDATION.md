@@ -304,3 +304,46 @@ Command: `uv run python scripts/run_backtest.py --offline`: 5 strategies × 639 
   - the two boundary days are both at the 25.04 MWh daily cap.
   
   It is structural, not a defect.
+
+---
+
+## Stage 7: financial metrics and sensitivity (2026-10-23)
+
+**Environment:** as Stage 6. Branch `gridflex/stage-7-finance`, uncommitted working tree.
+
+### Automated checks
+
+| Command | Result |
+|---|---|
+| `uv run pytest` | **431 passed**, 5 deselected (network) |
+| `uv run pytest --cov=gridflex` | 97 % total. `finance/metrics.py` 99 %, `investment.py` 96 %, `sensitivity.py` 95 % |
+| `uv run ruff check …` / `ruff format --check …` | all passed |
+| `uv run mypy` | Success, 39 files (stricter flags also apply to `gridflex.finance.*`) |
+
+### Tests added in Stage 7
+
+| File | What it checks |
+|---|---|
+| `tests/finance/test_finance.py` (15) | Hand values: total 130, annualised 130·365/3, per MW-yr and per MWh-yr, partial-year flag, full leap year not partial (366 days → 365). Capture ratio 130/400 and gross capture 230/600; NaN for a non-positive benchmark; mismatched days rejected; duplicate days rejected; empty input rejected. Month and year tables: `calendar_days` (leap February 29), `complete` flags, per-MW totals, negative-day counts, monthly capture. Investment: not computed without inputs (missing list); payback 5 000 000 / 26 500; None when cash flow ≤ 0; NPV at r = 0 and r = 5 % by hand; explicit replacement adds back degradation (3 650/yr) and books 2 000 000 in year 2; 5 invalid investment configs rejected |
+| `tests/finance/test_sensitivity.py` (5) | Variant construction (17 variants; power keeps energy fixed; duration keeps power fixed; efficiency split; degradation ×2 = 33.3 EUR/MWh; no-cap variant; one base value per parameter). Base rows identical across parameters. Perfect-foresight capture = 1. Benchmark monotone: non-increasing in degradation cost, non-decreasing in cycle cap and in power at fixed energy; at zero degradation, net = gross. Cached forecaster computes each day once |
+
+**Mutation spot-check** (each change reverted afterwards; counts are for `test_finance.py`):
+
+| Deliberate fault | Result |
+|---|---|
+| 366-day annualisation basis | 5 tests fail |
+| Degradation charge not added back under explicit replacement | 1 test fails |
+| Capture ratio computed on gross instead of net | 1 test fails |
+
+**Correction while writing tests.** An assertion that could not fail (`any("partial" not in …)`) was replaced by a precise check.
+
+### Real-data runs
+
+- **Backtest re-run** with the current config: the numbers are identical to §2 of RESULTS. The config fingerprint changed only through the new sections.
+- **Fingerprint guard.** `run_finance.py` refused the earlier backtest outputs because the config fingerprint differed. This is intended: financial metrics are never computed against a run made with another configuration.
+- **Finance:** summary, period and capture tables written. Investment metrics are reported as not computed, with the missing inputs listed.
+- **Sensitivity:** 17 variants × 2 strategies × 639 days, 0 failed days.
+- **Independent checks on the sensitivity output:**
+  - exact 2× scale invariance between 5 MW/20 MWh and 10 MW/40 MWh, and between 20 MW/20 MWh and 10 MW/10 MWh, with identical EUR/MW-yr;
+  - benchmark monotonicity in all five parameters;
+  - all derived ratios quoted in RESULTS §3 were recomputed from the CSVs.

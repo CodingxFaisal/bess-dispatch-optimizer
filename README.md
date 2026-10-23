@@ -4,7 +4,7 @@ Battery energy storage (BESS) dispatch optimisation and day-ahead market researc
 
 GridFlex turns price forecasts into physically feasible battery schedules and evaluates them against realised market prices. The goal is that every reported number can be traced to source data, asset configuration, model settings and a stated methodology.
 
-> **Status: under reconstruction (Stage 6 of 9 complete).** This repository is being rebuilt from v0.1.0 (`bess-dispatch-optimizer`) following an audit, [docs/AUDIT.md](docs/AUDIT.md).
+> **Status: under reconstruction (Stage 7 of 9 complete).** This repository is being rebuilt from v0.1.0 (`bess-dispatch-optimizer`) following an audit, [docs/AUDIT.md](docs/AUDIT.md).
 >
 > **The v0.1.0 headline results are withdrawn.** The "84.5 % foresight capture" of the gradient-boosting strategy relied on PV and wind forecasts that are only published after the day-ahead bidding deadline. Without them the same model captured 70.8 % in an audit rerun, which is below a seasonal-naive forecast. The old outputs are kept, labelled, in [results/legacy_v0.1.0/](results/legacy_v0.1.0/README.md). Results from the rebuilt, validated pipeline are in [docs/RESULTS.md](docs/RESULTS.md).
 >
@@ -29,9 +29,9 @@ GridFlex turns price forecasts into physically feasible battery schedules and ev
 | 3 | Battery physics and hand-verifiable tests | done ([MATHEMATICAL_MODEL](docs/MATHEMATICAL_MODEL.md) §2) |
 | 4 | Optimisation model (PuLP + HiGHS) and solver diagnostics | done ([MATHEMATICAL_MODEL](docs/MATHEMATICAL_MODEL.md) §3) |
 | 5 | Forecast baselines and leakage tests | done ([BACKTEST_METHODOLOGY](docs/BACKTEST_METHODOLOGY.md) §1, [RESULTS](docs/RESULTS.md) §1) |
-| 6 | Rolling backtest and settlement | **done** ([BACKTEST_METHODOLOGY](docs/BACKTEST_METHODOLOGY.md) §2, [RESULTS](docs/RESULTS.md) §2, [VALIDATION](docs/VALIDATION.md)) |
-| 7 | Financial metrics and sensitivity analysis | next |
-| 8 | Streamlit UI and exports | |
+| 6 | Rolling backtest and settlement | done ([BACKTEST_METHODOLOGY](docs/BACKTEST_METHODOLOGY.md) §2, [RESULTS](docs/RESULTS.md) §2) |
+| 7 | Financial metrics and sensitivity analysis | **done** ([RESULTS](docs/RESULTS.md) §3, [VALIDATION](docs/VALIDATION.md)) |
+| 8 | Streamlit UI and exports | next |
 | 9 | Integration tests, clean-environment reproduction, documentation | |
 
 ## What exists now
@@ -75,6 +75,12 @@ GridFlex turns price forecasts into physically feasible battery schedules and ev
   - every run records its metadata (git commit, config fingerprint, package versions).
 
   Results: [RESULTS §2](docs/RESULTS.md).
+- **Financial metrics and sensitivity** (`gridflex.finance`):
+  - annualised (365-day basis) and normalised revenue, period tables flagged when incomplete, and a forecast capture ratio with a precise definition;
+  - payback and NPV only when every input is configured;
+  - one-at-a-time sensitivity to power, duration, efficiency, degradation cost and cycle cap.
+
+  Results: [RESULTS §3](docs/RESULTS.md).
 - **Information-availability registry** (`gridflex.data.availability`): it knows what was public at the 12:00 gate closure and raises `InformationLeakageError` otherwise.
 
 ## Setup
@@ -112,9 +118,19 @@ uv run python scripts/evaluate_forecasts.py --offline
 uv run python scripts/run_backtest.py --offline
 ```
 
+```bash
+uv run python scripts/run_finance.py
+```
+
+```bash
+uv run python scripts/run_sensitivity.py --offline
+```
+
 1. The first command downloads and validates the SMARD data. Raw payloads are cached under `data/cache/`, and every run records its provenance.
 2. The second selects forecast models on 2023 and scores them once on the hold-out, 2024 to Sep 2025.
 3. The third backtests the configured strategies over the hold-out.
+4. The fourth computes financial metrics from that backtest; it refuses runs made with a different config.
+5. The fifth runs the one-at-a-time sensitivity analysis (about 15 minutes).
 
 Outputs go to `runs/latest/` (git-ignored), each with `metadata.json`. See [RUNNING.md](RUNNING.md) for details.
 
@@ -145,6 +161,7 @@ src/gridflex/forecasting/   Stage 5 forecasters, feature table with publication 
 src/gridflex/settlement/    settlement of committed schedules (realised and expected)
 src/gridflex/backtest/      rolling day-ahead engine, strategies, two-window heuristic
 src/gridflex/reporting/     run metadata (git commit, config fingerprint, versions)
+src/gridflex/finance/       financial metrics, investment metrics, sensitivity
 scripts/                    CLI entry points; capture_smard_fixtures.py
 tests/                      unit, property and offline fixture tests; data/ for the data layer
 docs/                       AUDIT, DATA_DICTIONARY, MATHEMATICAL_MODEL, BACKTEST_METHODOLOGY,

@@ -313,7 +313,7 @@ Key design decisions:
 | D1, D5–D9, D19–D22 | resolved | Stage 2 |
 | D11 (AC/DC basis, EFC definition) | resolved: selectable, DC/usable default, bridge converts exactly | Stage 3; MATHEMATICAL_MODEL §2.4–2.5 |
 | D12 (terminal policy) | resolved: cyclic, fixed, and free with an explicit value, in physics, config and optimiser | Stages 3–4 |
-| D13 | partially resolved (payback only when capex is configured) | Stage 2; full in Stage 7 |
+| D13 (payback misuse) | resolved: payback and NPV only when every input is configured, with assumptions listed and replacement handled without double counting; the default config computes neither | Stage 7 |
 | D16 | README claims withdrawn | Stage 2 |
 | D3 (failed solves settled) | resolved in the optimiser: no schedule unless proven optimal and independently verified; the v0.1 backtest still uses the v0.1 MILP until Stage 6 | Stage 4; Stage 6 |
 | D24, D25 | resolved | Stage 4 |
