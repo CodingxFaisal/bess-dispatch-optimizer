@@ -214,3 +214,19 @@ def test_start_energy_is_respected() -> None:
     assert sol.objective_eur == pytest.approx(100.0)
     # Same prices from empty: nothing to sell first, buying first earns nothing.
     assert solve([100.0, 0.0]).objective_eur == pytest.approx(0.0, abs=1e-9)
+
+
+def test_trading_cost() -> None:
+    # Efficiency case (profit 16) with 2 EUR/MWh on 1 + 0.72 MWh traded:
+    # 16 - 2 * 1.72 = 12.56.
+    b = toy_battery(**LOSSY)
+    sol = solve_dispatch(
+        DispatchProblem(b, [20.0, 50.0], 1.0, trading_cost_eur_per_mwh=2.0)
+    )
+    assert sol.success and sol.objective_eur == pytest.approx(12.56, abs=1e-6)
+    assert sol.trading_cost_eur == pytest.approx(3.44, abs=1e-6)
+    # Above the break-even fee 16 / 1.72 = 9.30 the battery idles.
+    idle = solve_dispatch(
+        DispatchProblem(b, [20.0, 50.0], 1.0, trading_cost_eur_per_mwh=10.0)
+    )
+    assert idle.objective_eur == pytest.approx(0.0, abs=1e-9)

@@ -1,6 +1,6 @@
 # Mathematical model
 
-Status: complete for the physics (§2, Stage 3) and the optimisation model (§3, Stage 4). §2 is implemented in `gridflex.battery`, §3 in `gridflex.optimization`. The v0.1 MILP (`gridflex.optimize.dispatch`) is still used by the v0.1 backtest until Stage 6 replaces it.
+Status: complete for the physics (§2, Stage 3) and the optimisation model (§3, Stage 4). §2 is implemented in `gridflex.battery`, §3 in `gridflex.optimization`. The rolling backtest (Stage 6, `gridflex.backtest`) uses both; the v0.1 MILP has been retired.
 
 ---
 
@@ -111,7 +111,7 @@ Stage 3 measured this on the v0.1 perfect-foresight backtest for 2023–2024 (73
 - within a day, the two trajectories agree to $6 \times 10^{-7}$ MWh;
 - the v0.1 backtest carries the solver value, so after 731 days the accountings differ by $4.8 \times 10^{-5}$ MWh.
 
-The amount is negligible, but the method is wrong (AUDIT D23). It is fixed in Stage 6.
+The amount is negligible, but the method is wrong (AUDIT D23). Since Stage 6 the backtest carries the state-equation energy of the committed schedule; the Stage 6 backtest showed no drift with HiGHS.
 
 ### 2.7 Feasibility checking
 

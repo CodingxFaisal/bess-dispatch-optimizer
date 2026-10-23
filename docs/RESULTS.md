@@ -7,7 +7,7 @@ Every number here was produced by a command in this repository, run on validated
 | Section | Status |
 |---|---|
 | 1. Day-ahead price forecast accuracy (hourly regime) | Stage 5, below |
-| 2. Dispatch backtest: forecast-driven vs perfect foresight vs heuristic | Stage 6 |
+| 2. Dispatch backtest: forecast-driven vs perfect foresight vs heuristic | Stage 6, below |
 | 3. Financial metrics and sensitivity | Stage 7 |
 
 ---
@@ -77,3 +77,59 @@ These are the chosen configurations, run once. No hold-out data influenced any c
 - Forecast accuracy is only one input to the value of a strategy, and these results are specific to 2024–2025 market conditions.
 
 Outputs: `runs/latest/forecast_evaluation/` contains `selection.csv`, `holdout_metrics.csv`, `holdout_by_year.csv`, `dm_tests.csv`, `holdout_forecasts.csv` (all 61,340 forecast rows with metadata) and `metadata.json` (config fingerprint, versions, data provenance). The directory is git-ignored; re-create it with the command above.
+
+---
+
+## 2. Day-ahead dispatch backtest (hourly regime)
+
+**Run:**
+
+- Command: `uv run python scripts/run_backtest.py --offline`, run 2026-10-23 in 521 s, deterministic. A second run on the same code reproduced every number exactly.
+- Code: working tree based on commit `c80c0db` (recorded as dirty in `metadata.json`); config fingerprint `50d4855ec19d…`.
+- Period: local delivery days 2024-01-01 → 2025-09-30, 639 days, the same hold-out as §1.
+- Method: [BACKTEST_METHODOLOGY §2](BACKTEST_METHODOLOGY.md). Day-ahead only, price taker, full-day commitment at D−1 12:00, daily cyclic state, physically carried energy.
+- Battery: 10 MW / 20 MWh, round-trip efficiency 0.86, SoC 5–95 %, cap of 1.5 EFC/day (DC discharge over usable energy), degradation 16.67 EUR per DC MWh (unsourced placeholder), no trading cost.
+
+### 2.1 Totals
+
+| Strategy | Failed days | Expected net | Realised gross | Degradation | **Net operating revenue** | Sold (MWh) | EFC | Share of perfect foresight |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|
+| Perfect foresight (benchmark, not deployable) | 0 | 942,903 | 1,181,489 | 238,586 | **942,903** | 13,275 | 795 | 100 % |
+| Lasso forecast + MILP | 0 | 566,453 | 1,027,570 | 237,344 | **790,226** | 13,206 | 791 | 83.8 % |
+| GBR forecast + MILP | 0 | 766,007 | 1,024,455 | 242,855 | **781,601** | 13,513 | 810 | 82.9 % |
+| Persistence forecast + MILP | 0 | 938,549 | 951,156 | 238,586 | **712,570** | 13,275 | 795 | 75.6 % |
+| Persistence forecast + two-window heuristic | 0 | 528,618 | 502,364 | 95,250 | **407,114** | 5,300 | 318 | 43.2 % |
+
+EUR unless stated; totals over 639 days. "Share" is net operating revenue divided by the perfect-foresight net over the same days.
+
+### 2.2 By calendar year
+
+| Strategy | 2024 net (366 d) | 2024 share | 2025 net (Jan–Sep, 273 d) | 2025 share |
+|---|--:|--:|--:|--:|
+| Perfect foresight | 470,350 | 100 % | 472,553 | 100 % |
+| Lasso + MILP | 376,516 | 80.1 % | 413,710 | 87.5 % |
+| GBR + MILP | 379,331 | 80.6 % | 402,270 | 85.1 % |
+| Persistence + MILP | 334,265 | 71.1 % | 378,304 | 80.1 % |
+| Persistence + heuristic | 189,278 | 40.2 % | 217,836 | 46.1 % |
+
+### 2.3 Interpretation
+
+- **Trained forecasts are worth about 8 percentage points of the benchmark.** GBR and Lasso earn 70–78 kEUR (about 10 %) more than the same optimiser driven by yesterday's prices. Between the two trained models the difference is small (Lasso +8.6 kEUR), in line with their statistically indistinguishable forecast accuracy (§1.3). No significance test was run on revenue.
+- **The optimiser is worth more than the forecast.** On the same persistence forecast, the MILP earns 1.75× the two-window heuristic. The heuristic uses one cycle of at most half the usable window per day (0.5 EFC/day).
+- **Expected and realised values diverge, in both directions:**
+  - persistence plans are optimistic: 939 kEUR expected vs 713 kEUR realised;
+  - Lasso plans are pessimistic: 566 vs 790 kEUR;
+  - GBR plans are close: 766 vs 782 kEUR.
+  
+  Planned value from a forecast is therefore not a reliable estimate of realised value.
+- **Throughput is the same across MILP strategies, and the value comes from timing.** All MILP strategies discharge about 13.2–13.5 GWh (≈ 795–810 EFC). They differ in which hours they trade.
+- **Some days lose money:** 57 (Lasso), 60 (GBR) and 75 (persistence) of 639 days had negative realised net, when the committed schedule met prices unlike the forecast.
+- **Persistence + MILP matches perfect foresight in throughput and degradation exactly.** This is structural, not a bug. Its schedule for day D is the perfect-foresight schedule for D−1: this held on 632 of 638 comparable days, with the exceptions being the clock-change days and the day after each, where a 24-hour shift isn't the same wall-clock time. The two boundary days both sit at the daily cycle cap, 25.04 MWh, so the totals coincide.
+
+### 2.4 What these numbers are not
+
+- **Not profit.** They exclude capital cost, fixed O&M, grid charges and levies, taxes, financing, imbalance risk and trading fees (`trading_cost_eur_per_mwh` = 0 here).
+- **Not annualised.** 2025 covers January–September only. Normalised metrics (EUR/MW-yr, EUR/MWh-yr) and sensitivity analysis follow in Stage 7.
+- **Not a forecast of future revenue.** They are specific to 2024–2025 prices, to the day-ahead-only fixed-schedule design, and to an unsourced degradation cost.
+
+Outputs: `runs/latest/backtest/` contains `daily.csv` (3,195 rows), `intervals.csv` (76,675 rows), `summary.csv` and `metadata.json`. The directory is git-ignored; re-create it with the command above.

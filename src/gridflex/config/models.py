@@ -425,11 +425,78 @@ class ForecastingConfig(StrictModel):
 
 
 # --------------------------------------------------------------------------- #
+# Backtest                                                                    #
+# --------------------------------------------------------------------------- #
+ForecastModel = Literal["persistence", "seasonal_naive", "lasso", "gbr"]
+
+
+class StrategySpec(StrictModel):
+    """One strategy in a backtest.
+
+    * ``perfect_foresight``: optimise against realised prices (upper benchmark;
+      uses future information by construction; not deployable).
+    * ``forecast``: optimise against the forecast of ``model``.
+    * ``heuristic``: two-window rule on the forecast of ``model`` (no optimiser).
+
+    Trained models take ``window_days`` (and ``max_depth`` for GBR); the other
+    hyperparameters come from the ``forecasting`` section.
+    """
+
+    name: Annotated[str, Field(pattern=r"^[a-z0-9_]+$")]
+    kind: Literal["perfect_foresight", "forecast", "heuristic"]
+    model: ForecastModel | None = None
+    window_days: Annotated[int, Field(ge=14)] | None = None
+    max_depth: Annotated[int, Field(ge=1)] | None = None
+
+    @model_validator(mode="after")
+    def _consistent(self) -> StrategySpec:
+        if self.kind == "perfect_foresight":
+            if self.model or self.window_days or self.max_depth:
+                raise ValueError("perfect_foresight takes no forecast model")
+            return self
+        if self.model is None:
+            raise ValueError(f"strategy kind {self.kind!r} needs a model")
+        trained = self.model in ("lasso", "gbr")
+        if trained and self.window_days is None:
+            raise ValueError(f"model {self.model!r} needs window_days")
+        if not trained and (self.window_days or self.max_depth):
+            raise ValueError(f"model {self.model!r} takes no window_days/max_depth")
+        if self.max_depth is not None and self.model != "gbr":
+            raise ValueError("max_depth only applies to model 'gbr'")
+        return self
+
+
+class BacktestConfig(StrictModel):
+    """Rolling day-ahead backtest (see docs/BACKTEST_METHODOLOGY.md section 2)."""
+
+    period: DayPeriod
+    on_failure: Literal["idle", "abort"] = "idle"
+    strategies: list[StrategySpec]
+
+    @model_validator(mode="after")
+    def _unique(self) -> BacktestConfig:
+        names = [s.name for s in self.strategies]
+        if not names:
+            raise ValueError("at least one strategy is required")
+        if len(set(names)) != len(names):
+            raise ValueError("strategy names must be unique")
+        return self
+
+
+# --------------------------------------------------------------------------- #
 # Economics                                                                   #
 # --------------------------------------------------------------------------- #
 class EconomicsConfig(StrictModel):
-    """Investment inputs. Investment metrics are only computed when supplied."""
+    """Operating-cost and investment inputs.
 
+    ``trading_cost_eur_per_mwh`` is a variable cost per MWh traded (bought plus
+    sold at the grid connection), for example exchange and clearing fees. It is
+    zero unless configured, and both the optimiser and settlement use it.
+    Investment metrics are only computed when their inputs are supplied.
+    """
+
+    trading_cost_eur_per_mwh: Annotated[float, Field(ge=0.0)] = 0.0
+    trading_cost_source: str = "not modelled (0)"
     capex_eur_per_kwh: Annotated[float, Field(gt=0.0)] | None = None
 
 
@@ -443,6 +510,7 @@ class GridFlexConfig(StrictModel):
     data: DataConfig
     optimization: OptimizationConfig = OptimizationConfig()
     forecasting: ForecastingConfig | None = None
+    backtest: BacktestConfig | None = None
     economics: EconomicsConfig = EconomicsConfig()
 
     @model_validator(mode="after")
@@ -452,5 +520,15 @@ class GridFlexConfig(StrictModel):
             if unknown:
                 raise ValueError(
                     f"forecasting.exogenous_series not in data.series: {unknown}"
+                )
+        if self.backtest is not None:
+            kinds = {s.kind for s in self.backtest.strategies}
+            if kinds - {"perfect_foresight"} and self.forecasting is None:
+                raise ValueError(
+                    "forecast/heuristic strategies need a forecasting section"
+                )
+            if "heuristic" in kinds and self.battery.terminal_soc_policy != "cyclic":
+                raise ValueError(
+                    "the heuristic strategy supports terminal policy cyclic only"
                 )
         return self

@@ -4,6 +4,7 @@ from gridflex.config.loader import ConfigError, config_fingerprint, load_config
 from gridflex.config.models import (
     RESOLUTION_MINUTES,
     AvailabilityRule,
+    BacktestConfig,
     BatteryConfig,
     CachePolicy,
     DataConfig,
@@ -25,11 +26,13 @@ from gridflex.config.models import (
     Resolution,
     RoundTripEfficiency,
     SeriesConfig,
+    StrategySpec,
 )
 
 __all__ = [
     "RESOLUTION_MINUTES",
     "AvailabilityRule",
+    "BacktestConfig",
     "BatteryConfig",
     "CachePolicy",
     "ConfigError",
@@ -52,6 +55,7 @@ __all__ = [
     "Resolution",
     "RoundTripEfficiency",
     "SeriesConfig",
+    "StrategySpec",
     "config_fingerprint",
     "load_config",
 ]

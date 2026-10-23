@@ -14,7 +14,6 @@ from gridflex.data.availability import (
     latest_available_delivery_day,
 )
 from gridflex.data.errors import InformationLeakageError
-from gridflex.forecast.models import EXOGENOUS_COLS
 
 TZ = "Europe/Berlin"
 
@@ -96,7 +95,11 @@ def test_assert_available_raises_on_leakage(gf_cfg: GridFlexConfig) -> None:
         assert_available(gf_cfg, "price", day_d.tz_localize(None), at)
 
 
-def test_v01_ml_features_are_public_at_decision(gf_cfg: GridFlexConfig) -> None:
-    """Guard for audit D1: every exogenous ML input must be day-ahead usable."""
+def test_configured_forecast_inputs_are_public_at_decision(
+    gf_cfg: GridFlexConfig,
+) -> None:
+    """Guard for audit D1: every configured exogenous forecast input must be
+    day-ahead usable."""
+    assert gf_cfg.forecasting is not None
     usable = set(day_ahead_usable_series(gf_cfg, dt.date(2024, 7, 2)))
-    assert set(EXOGENOUS_COLS) <= usable
+    assert set(gf_cfg.forecasting.exogenous_series) <= usable

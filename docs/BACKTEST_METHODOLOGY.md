@@ -1,6 +1,6 @@
 # Backtest methodology
 
-Status: §1 (price forecasting protocol, Stage 5) is complete. §2 (the rolling dispatch backtest and settlement) follows in Stage 6.
+Status: complete. §1 (price forecasting protocol) is from Stage 5; §2 (rolling dispatch backtest and settlement) is from Stage 6.
 
 ---
 
@@ -107,10 +107,96 @@ Command: `uv run python scripts/evaluate_forecasts.py --offline`. Outputs go to 
 - One exogenous driver (load). PV and wind forecasts would require vintaged data published before 12:00, which SMARD does not provide.
 - Model selection uses a small, documented grid and a single selection year. The hold-out spans one and three-quarter years, covering 2024's negative-price regime.
 - The DM test treats days as independent one-step-ahead forecasts.
-- The v0.1 `gridflex.forecast` module remains only for the v0.1 backtest until Stage 6.
 
 ---
 
 ## 2. Rolling dispatch backtest and settlement
 
-*To be written in Stage 6.*
+Implemented in `gridflex.backtest` and `gridflex.settlement`. Configured under `backtest:` and `economics:` in [configs/default.yaml](../configs/default.yaml). Command: `uv run python scripts/run_backtest.py --offline`.
+
+### 2.1 Strategy design and scope
+
+**What this is.** A **day-ahead-only** strategy for one battery acting as a **price taker** in the DE-LU day-ahead auction. Each delivery day's full physical schedule is committed once, at the D−1 gate closure, and is never re-optimised.
+
+**What it is not.** A complete trading simulator. There is:
+
+- no intraday re-optimisation, no balancing reserves, no imbalance settlement;
+- no price-dependent bid curves: the schedule is accepted whatever the clearing price;
+- no market impact, outages, grid fees or taxes.
+
+The results measure what a fixed day-ahead schedule earns under these assumptions.
+
+### 2.2 Daily loop
+
+For each local delivery day $D$ in the period (23, 24 or 25 hours; interval durations come from the UTC timestamps):
+
+| Step | What happens |
+|---|---|
+| 1. Decide | At $t_0(D)$ = D−1 12:00 Europe/Berlin, the strategy plans the whole day from the carried start energy $E_{start}(D)$ and from what it may know. A forecast strategy receives a `PriceForecast` built under the §1 leakage guards. Only the perfect-foresight benchmark receives the realised prices of $D$; the engine passes `None` to every other strategy. |
+| 2. Commit | The planned schedule is committed. If planning failed (forecast error, solver not optimal, malformed problem), the committed schedule is **idle** (zero power) and the day is flagged `failed`, with the reason. With `on_failure: abort`, the run stops instead. A failed plan is never settled as an optimised result (AUDIT D3). |
+| 3. Verify | The committed schedule is checked by `gridflex.battery.check_schedule` (power, simultaneity, SoC, terminal policy, cycle cap) at the configured tolerances. A violation replaces it with idle and flags the day `rejected`. |
+| 4. Settle | `gridflex.settlement.settle` values the committed schedule at **realised** day-ahead prices, and at the plan prices for **expected** net. |
+| 5. Carry | $E_{start}(D{+}1)$ is the state-equation energy at the end of the committed schedule on $D$, not a solver variable (AUDIT D23). |
+
+The default policy is `cyclic`, so every strategy returns to its start energy each day.
+
+### 2.3 Strategies
+
+All strategies run on the same days, with the same battery, constraints, costs and starting state.
+
+| Strategy (default config) | Information | Planning |
+|---|---|---|
+| `perfect_foresight` | realised prices of $D$ (**future information**) | MILP (§3 of MATHEMATICAL_MODEL). An upper benchmark, not deployable |
+| `forecast_gbr` | GBR forecast (728 d window, depth 6; selected in Stage 5) | MILP on the forecast |
+| `forecast_lasso` | LEAR-style Lasso forecast (728 d window) | MILP on the forecast |
+| `forecast_persistence` | D−1 prices at the same wall-clock time | MILP on the forecast |
+| `heuristic_persistence` | D−1 prices at the same wall-clock time | Two-window rule (below), no optimiser |
+
+**Two-window heuristic** (`gridflex.backtest.heuristic`):
+
+1. Compute $Q$, the largest cycle that fits the SoC window from $E_{start}$ and the day's cycle cap.
+2. Consider charging $Q$ then discharging it, and discharging $Q$ then recharging it.
+3. Each leg runs at constant power over the shortest block of consecutive intervals that can move its energy at derated rated power.
+4. Pick the ordered, non-overlapping pair of blocks with the highest forecast value (revenue − degradation − trading cost). Idle if no pair is positive.
+
+The result is cyclic, never charges and discharges at once, and is feasible by construction; the engine still verifies it. From a 50 % start, one cycle can use at most half the usable window (9 of 18 MWh in the default configuration). It is deliberately simple.
+
+### 2.4 Settlement and reported quantities
+
+Per day, in EUR unless stated. Formulas are in `gridflex.settlement.settle`.
+
+| Quantity | Definition |
+|---|---|
+| `purchases_eur` | $\sum_t p_t P^{ch}_t \Delta t_t$ at realised prices (negative when paid to consume) |
+| `sales_eur` | $\sum_t p_t P^{dis}_t \Delta t_t$ |
+| `gross_revenue_eur` | sales − purchases |
+| `degradation_cost_eur` | $c^{deg} \times$ DC (default) or AC discharge |
+| `trading_cost_eur` | `trading_cost_eur_per_mwh` × (MWh bought + MWh sold); 0 unless configured |
+| `net_operating_revenue_eur` | gross − degradation − trading |
+| `terminal_value_eur` | $v^{term}(E_{end}-E_{start})$ under policy `free` only; reported separately, not in net |
+| `expected_net_eur` | the same net, valued at the plan prices (forecast, or realised for perfect foresight); NaN on failed days |
+| `energy_bought_mwh`, `energy_sold_mwh`, `equivalent_full_cycles` | AC energy at the grid connection; EFC on the configured basis |
+| forecast/solver metadata | solve status, MIP gap, runtime; forecast model version, feature and training cutoffs, forecast MAE for the day |
+
+**Net operating revenue is not profit.** It excludes capital cost, fixed O&M, grid charges, taxes, financing and imbalance risk. Payback and NPV are only computed when their inputs are configured (Stage 7).
+
+`share_of_perfect_foresight_net` in `summary.csv` is the strategy's total net operating revenue divided by the perfect-foresight total over the same days. It is a diagnostic here; Stage 7 defines the reported metrics formally.
+
+### 2.5 Reproducibility
+
+Every run writes `metadata.json`, which records:
+
+- creation time, gridflex version, and git commit with a dirty flag;
+- Python, platform and package versions (numpy, pandas, PuLP, highspy, scikit-learn, SciPy, pydantic);
+- the config fingerprint and full config dump;
+- the strategy descriptions with model configs, the policy, and data provenance (SMARD series, chunk retrieval times, validation reports).
+
+HiGHS runs single-threaded, and GBR uses a fixed `random_state`, so results are deterministic. Tests confirm that repeat runs are identical apart from wall-clock timing.
+
+### 2.6 Limitations
+
+- Day-ahead only, price taker, fixed schedule; no bid curves or re-optimisation.
+- Daily cyclic terminal policy: energy is not shifted across days. A `free` policy with an explicit terminal value is supported by the optimiser and settlement, but not by the heuristic.
+- One market time unit regime per run: the hourly hold-out ends on 2025-09-30; the 15-minute regime is not yet evaluated.
+- Forecast-vintage limitation of SMARD data (§1.1).
+- The degradation cost is an unsourced placeholder (MATHEMATICAL_MODEL §2.5).

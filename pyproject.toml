@@ -21,7 +21,6 @@ dependencies = [
     "pulp>=2.8,<4",
     "scikit-learn>=1.5",
     "matplotlib>=3.8",
-    "seaborn>=0.13",
     "highspy>=1.7",
 ]
 
@@ -95,7 +94,8 @@ warn_redundant_casts = true
 [[tool.mypy.overrides]]
 module = [
     "gridflex.config.*", "gridflex.data.*", "gridflex.battery.*",
-    "gridflex.optimization.*", "gridflex.forecasting.*",
+    "gridflex.optimization.*", "gridflex.forecasting.*", "gridflex.settlement.*",
+    "gridflex.backtest.*", "gridflex.reporting.*",
 ]
 disallow_untyped_defs = true
 disallow_incomplete_defs = true

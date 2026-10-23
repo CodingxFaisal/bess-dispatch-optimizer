@@ -320,5 +320,11 @@ Key design decisions:
 | D10 (DST lag misalignment) | resolved: wall-clock lags with a documented DST rule | Stage 5; BACKTEST_METHODOLOGY §1.2 |
 | D14 (forecast evaluation) | resolved for forecasts: MAE/RMSE/rMAE and DM tests on a hold-out separate from selection, plus a LEAR-style Lasso baseline. The heuristic dispatch baseline follows in Stage 6 | Stage 5 |
 | D1 (forecast leakage) | additionally enforced at runtime: publication-time guards in every forecast, plus an end-to-end corruption test | Stage 5 |
-| D2, D4, D15 (run metadata), D17, D18, D23 | open: v0.1 backtest | Stage 6 |
+| D2 (silent forecast fill) | resolved: missing inputs raise; failed days are idle and flagged | Stages 5–6 |
+| D3 (failed solves settled) | resolved in the backtest: failed or rejected plans are committed idle and flagged, never settled as optimised | Stage 6 |
+| D4 (gaps collapse the time axis) | resolved: validated datasets, per-interval durations from timestamps, incomplete days abort | Stages 2, 4, 6 |
+| D15 (run metadata) | resolved: git commit and dirty flag, config fingerprint and dump, package versions, provenance in every run | Stage 6 |
+| D18 (tz-aware API) | resolved: the v0.1 API was removed; the new APIs take dates or tz-aware UTC instants | Stage 6 |
+| D23 (state carry) | resolved: the next day starts from the state-equation energy of the committed schedule | Stage 6 |
+| D17 (test gaps) | largely resolved; remaining: UI and finance tests | Stages 7–8 |
 

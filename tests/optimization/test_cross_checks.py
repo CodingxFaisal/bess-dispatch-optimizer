@@ -5,8 +5,8 @@
    from a separately written matrix formulation. The best LP value is the
    MILP optimum.
 2. Solver agreement: HiGHS and CBC find the same optimum.
-3. v0.1 equivalence: on the default configuration, the new model and the v0.1
-   MILP (via the DispatchParams bridge) have the same optimal value.
+(v0.1 equivalence was verified in Stage 4 before the v0.1 MILP was retired;
+see docs/VALIDATION.md.)
 """
 
 import itertools
@@ -18,8 +18,6 @@ from scipy.optimize import linprog
 from gridflex.battery import BatteryModel, check_schedule
 from gridflex.config import GridFlexConfig, OptimizationConfig
 from gridflex.optimization import DispatchProblem, solve_dispatch
-from gridflex.optimize import optimize_dispatch, settle
-from gridflex.optimize.params import DispatchParams
 
 
 def enumerated_optimum(p: DispatchProblem) -> float:
@@ -133,21 +131,6 @@ def test_highs_and_cbc_agree(gf_cfg: GridFlexConfig, seed: int) -> None:
     cbc = solve_dispatch(p, OptimizationConfig(solver="cbc"))
     assert highs.success and cbc.success
     assert highs.objective_eur == pytest.approx(cbc.objective_eur, rel=1e-6, abs=1e-4)
-
-
-@pytest.mark.parametrize("seed", range(8))
-def test_equivalent_to_v01_milp_on_default_config(
-    gf_cfg: GridFlexConfig, seed: int
-) -> None:
-    b = BatteryModel.from_config(gf_cfg.battery)
-    params = DispatchParams.from_config(gf_cfg)
-    prices = np.random.default_rng(200 + seed).normal(60, 120, 23 + seed % 3)
-    new = solve_dispatch(DispatchProblem(b, prices, 1.0))
-    old = optimize_dispatch(prices, params)
-    assert new.success and old.solved
-    assert new.objective_eur == pytest.approx(
-        settle(old, prices, params).net_revenue_eur, rel=1e-6, abs=1e-4
-    )
 
 
 def test_deterministic_repeat_solves(gf_cfg: GridFlexConfig) -> None:
