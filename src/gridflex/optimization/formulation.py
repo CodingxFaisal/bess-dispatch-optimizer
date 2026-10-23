@@ -4,6 +4,7 @@ See ``docs/MATHEMATICAL_MODEL.md`` §3. For interval ``t`` (duration ``dt_t``)::
 
     max  sum_t pi_t (P_dis_t - P_ch_t) dt_t            expected market revenue
          - c_deg * sum_t q_t                           degradation cost
+         - c_trade * sum_t (P_ch_t + P_dis_t) dt_t     trading cost (if configured)
          + v_term * (E_{T-1} - E_start)                only for terminal 'free'
 
     E_t   = E_{t-1} + eta_ch P_ch_t dt_t - P_dis_t dt_t / eta_dis,  E_{-1} = E_start
@@ -68,6 +69,11 @@ def build_model(
     ) - b.degradation_cost_eur_per_mwh * pulp.lpSum(
         deg_coef[t] * p_dis[t] for t in range(n)
     )
+    fee = problem.trading_cost_eur_per_mwh
+    if fee > 0:
+        objective -= fee * pulp.lpSum(
+            float(dt[t]) * (p_ch[t] + p_dis[t]) for t in range(n)
+        )
     if b.terminal_policy == "free":
         assert b.terminal_energy_value_eur_per_mwh is not None
         objective += b.terminal_energy_value_eur_per_mwh * (e[n - 1] - e0)

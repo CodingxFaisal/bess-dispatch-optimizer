@@ -41,7 +41,8 @@ class DispatchProblem:
     ``e_start_mwh`` defaults to the battery's initial energy; in a rolling
     backtest it must be the physically simulated carried state.
     ``availability`` (per interval, in [0, 1]) overrides the battery's
-    availability fraction.
+    availability fraction. ``trading_cost_eur_per_mwh`` is charged on every
+    MWh bought and sold at the grid connection.
     """
 
     battery: BatteryModel
@@ -51,6 +52,7 @@ class DispatchProblem:
     availability: FloatArray | None = None
     index: pd.DatetimeIndex | None = None
     label: str = ""
+    trading_cost_eur_per_mwh: float = 0.0
 
     def __post_init__(self) -> None:
         prices = _vector(self.prices_eur_per_mwh, "prices_eur_per_mwh")
@@ -100,6 +102,10 @@ class DispatchProblem:
             object.__setattr__(self, "availability", avail)
         if self.index is not None and len(self.index) != n:
             raise ProblemError("index length must match the number of prices")
+        fee = float(self.trading_cost_eur_per_mwh)
+        if not np.isfinite(fee) or fee < 0:
+            raise ProblemError("trading_cost_eur_per_mwh must be finite and >= 0")
+        object.__setattr__(self, "trading_cost_eur_per_mwh", fee)
 
     @classmethod
     def from_index(

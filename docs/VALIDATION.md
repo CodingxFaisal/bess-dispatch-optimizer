@@ -249,3 +249,58 @@ Results are in [RESULTS.md §1](RESULTS.md).
 - Derived figures in RESULTS were recomputed from the CSVs.
 
 **Rerun on final code.** Lint-only edits were made to `features.py` while the first run was in progress. The evaluation was rerun on the final code and its outputs compared with the first run: `selection.csv`, `holdout_metrics.csv` and all 61,340 rows of `holdout_forecasts.csv` are **identical** (max abs numeric difference 0.0; rerun 398 s).
+
+---
+
+## Stage 6: rolling backtest and settlement (2026-10-23)
+
+**Environment:** as Stage 5; `seaborn` removed from the dependencies. Branch `gridflex/stage-6-backtest`, uncommitted working tree.
+
+**Retired v0.1 code.** `gridflex.optimize`, `gridflex.forecast`, `gridflex.backtest` (v0.1 `rolling.py`), `gridflex.analysis`, the v0.1 scripts and their 47 tests have been removed. Their equivalence with the new modules was recorded in the Stage 3–4 sections above before removal. Archived outputs remain in `results/legacy_v0.1.0/`.
+
+### Automated checks
+
+| Command | Result |
+|---|---|
+| `uv run pytest` | **411 passed**, 5 deselected (network); also in a clean copy installed with `uv sync --locked` |
+| `uv run pytest --cov=gridflex` | 97 % total (v0.1 modules removed). `backtest/heuristic.py` 100 %, `engine.py` 98 %, `settlement/settle.py` 98 %, `strategies.py` 91 %, `reporting/metadata.py` 86 % |
+| `uv run ruff check …` / `ruff format --check …` | all passed |
+| `uv run mypy` | Success, 35 files (stricter flags also apply to `settlement`, `backtest`, `reporting`) |
+
+### Tests added in Stage 6
+
+| File | What it checks |
+|---|---|
+| `tests/test_settlement.py` (9) | hand settlement: purchases 40, sales 90, gross 50, DC degradation 22.5, trading cost 1.9, end energy 1.55 MWh; negative-price purchase is income; idle = 0; free terminal value reported separately (36 EUR); expected vs realised differ only by price (14.4); invalid prices or fees rejected |
+| `tests/optimization/test_hand_cases.py` (+1) | trading cost in the optimiser: 16 − 2 × 1.72 = 12.56; idle above the break-even fee of 9.30 |
+| `tests/backtest/test_heuristic.py` (67) | hand cases: charge-first (140), discharge-first with losses (80 − 100/9), idle cases, costs making it idle, cycle cap (Q = 1 MWh → 100), irregular durations (180); **60 random batteries and price days**: always feasible and cyclic, value ≥ 0 and equal to its settlement at plan prices |
+| `tests/backtest/test_engine.py` (16) | non-benchmark strategies receive `None`, never realised prices; perfect foresight equals a direct HiGHS solve per day and expected = realised; settlement reconciles with the interval export; failed forecast days (hand boundary: first forecastable day 22 Mar) are idle, zero-revenue, flagged, and `abort` stops the run; a physically invalid schedule is rejected, not settled; physical state carried across days (10 + k·0.92736 MWh); deterministic runs with metadata; perfect foresight is a daily upper bound; strategy-spec validation; heuristic requires the cyclic policy; availability derating |
+| `tests/backtest/test_fixture_end_to_end.py` (3) | real SMARD fixture, 2024-03-30 → 2024-04-07 (includes the 23 h day): regression totals, determinism, perfect-foresight upper bound, cyclic end energy, reconciliation with the interval export, CC BY 4.0 provenance |
+
+**Mutation spot-check** on `engine.py` (each reverted afterwards; counts are for `tests/backtest` and `tests/test_settlement.py`):
+
+| Deliberate fault | Result |
+|---|---|
+| State not carried between days | 1 test fails |
+| Realised prices passed to every strategy | 4 tests fail, 3 error |
+| Rejected schedule settled anyway | 1 test fails |
+
+**Expectation corrected while writing tests:**
+
+- My first failed-day test window ended before any forecastable day. The hand boundary (22 Mar) is now asserted exactly.
+- Wall-clock solver runtime is excluded from determinism checks.
+
+### Real-data backtest
+
+Command: `uv run python scripts/run_backtest.py --offline`: 5 strategies × 639 days, 0 failed days, 521 s. Results are in [RESULTS.md §2](RESULTS.md).
+
+**Checks on the outputs:**
+
+- A rerun on the final code reproduced `summary.csv` exactly (max abs difference 0.0, excluding runtime). An earlier run made before two test-only fixes gave identical numbers.
+- 3,195 daily rows (5 × 639) and 76,675 interval rows (5 × 15,335).
+- The mean daily forecast MAE in the backtest (GBR 22.19, Lasso 22.45, persistence 27.07 EUR/MWh) agrees with the Stage 5 hold-out (22.18, 22.44, 27.07). The small differences come from averaging per day rather than per interval.
+- The identical throughput of persistence + MILP and perfect foresight was investigated:
+  - the persistence schedule for day D equals the perfect-foresight schedule for D−1 on 632/638 days; the 6 exceptions are the clock-change days and the day after each, where a 24-hour shift isn't the same wall-clock time;
+  - the two boundary days are both at the 25.04 MWh daily cap.
+  
+  It is structural, not a defect.

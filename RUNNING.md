@@ -53,27 +53,7 @@ Flags:
 
 Windows must stay within one market time-unit regime: before 2025-10-01 (hourly) or from 2025-10-01 onward (15-minute).
 
-## 4. v0.1 strategies
-
-These are retained only until Stages 3–6 replace them; their results are not to be quoted. See README.
-
-```bash
-uv run python scripts/run_all.py
-```
-
-Outputs, including `data_provenance_*.json`, are written to `runs/latest/`.
-
-Diagnostics added in Stages 3–4 (they need cached data; add `--offline` to skip downloads):
-
-```bash
-uv run python scripts/check_v01_schedules.py --offline
-uv run python scripts/compare_optimizers.py --offline
-```
-
-- `check_v01_schedules.py`: every v0.1 schedule vs the independent physics checker.
-- `compare_optimizers.py`: the Stage 4 HiGHS model vs the v0.1 MILP, day by day, with solve reports in `runs/latest/optimizer_comparison.csv`.
-
-## 4b. Forecast evaluation (Stage 5)
+## 4. Forecast evaluation
 
 ```bash
 uv run python scripts/download_data.py --start 2021-01-01 --end 2025-10-01
@@ -83,7 +63,21 @@ uv run python scripts/download_data.py --start 2021-01-01 --end 2025-10-01
 uv run python scripts/evaluate_forecasts.py --offline
 ```
 
-Selects models on 2023 and scores them once on 2024-01-01 → 2025-09-30. This takes about 6 minutes. Outputs go to `runs/latest/forecast_evaluation/`; results are summarised in `docs/RESULTS.md`.
+Selects models on 2023 and scores them once on 2024-01-01 → 2025-09-30. This takes about 6 minutes. Outputs go to `runs/latest/forecast_evaluation/`; results are summarised in `docs/RESULTS.md` §1.
+
+## 5. Backtest
+
+```bash
+uv run python scripts/run_backtest.py --offline
+```
+
+Runs the strategies in `backtest:` (configs/default.yaml) over the configured period; this takes about 9 minutes for 5 strategies × 639 days. Options:
+
+- `--start` / `--end` to change the period;
+- `--strategies a,b` to run a subset;
+- `--out` to choose the output directory.
+
+Outputs go to `runs/latest/backtest/`: `daily.csv`, `intervals.csv`, `summary.csv` and `metadata.json`. Results are summarised in `docs/RESULTS.md` §2.
 
 ## Troubleshooting
 
@@ -91,7 +85,7 @@ Selects models on 2023 and scores them once on 2024-01-01 → 2025-09-30. This t
 - **`MarketRegimeError`.** The requested days cross 2025-10-01. Split the window at the switch to 15-minute products.
 - **`DataValidationError`.** The message lists each failing check. Nothing is filled automatically; investigate the source data, or rerun with `--refresh` if a cached chunk might be outdated.
 
-## 5. Regenerating the test fixture
+## 6. Regenerating the test fixture
 
 Only needed if the fixture must change; this downloads from SMARD.
 

@@ -203,3 +203,20 @@ def synthetic_market_frame(
     return pd.DataFrame(
         {"price": price, "load_forecast": load}, index=local.tz_convert("UTC")
     )
+
+
+def synthetic_dataset(frame: pd.DataFrame, timezone: str = "Europe/Berlin"):  # type: ignore[no-untyped-def]
+    """Wrap a synthetic UTC frame as a MarketDataset (no SMARD provenance)."""
+    from gridflex.data.dataset import MarketDataset
+
+    local = frame.index.tz_convert(timezone)
+    step = frame.index[1] - frame.index[0]
+    return MarketDataset(
+        frame=frame,
+        resolution="hour" if step == pd.Timedelta(hours=1) else "quarterhour",
+        timezone=timezone,
+        start_day=local[0].date(),
+        end_day=(local[-1] + step).date(),
+        metadata={},
+        reports={},
+    )

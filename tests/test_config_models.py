@@ -160,5 +160,6 @@ def test_missing_file_and_bad_yaml(tmp_path: Path) -> None:
 def test_fixed_terminal_policy_accepted(tmp_path: Path) -> None:
     raw = copy.deepcopy(_raw())
     raw["battery"].update(terminal_soc_policy="fixed", terminal_soc_fraction=0.5)
+    raw.pop("backtest")  # the default heuristic strategy needs a cyclic policy
     cfg = load_config(_write(tmp_path, raw))
     assert cfg.battery.terminal_soc_fraction == 0.5

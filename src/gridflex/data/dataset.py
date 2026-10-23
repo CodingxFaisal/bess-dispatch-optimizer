@@ -108,12 +108,6 @@ class MarketDataset:
         out.index = to_local(self.frame.index, self.timezone).rename("timestamp_local")
         return out
 
-    def to_legacy_frame(self) -> pd.DataFrame:
-        """Frame for the v0.1 forecasters/backtest (local index named ``timestamp``)."""
-        out = self.local_frame()
-        out.index.name = "timestamp"
-        return out
-
     def provenance(self) -> dict[str, Any]:
         """JSON-serialisable description for run metadata and exports."""
         from dataclasses import asdict

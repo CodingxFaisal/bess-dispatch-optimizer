@@ -99,6 +99,7 @@ class DispatchSolution:
     expected_revenue_eur: float | None = None
     degradation_cost_eur: float | None = None
     terminal_value_eur: float | None = None
+    trading_cost_eur: float | None = None
     extras: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -328,7 +329,10 @@ def _verify(
         terminal = b.terminal_energy_value_eur_per_mwh * (
             float(check.energy_mwh[-1]) - problem.start_energy_mwh
         )
-    recomputed = revenue - deg + terminal
+    trading = problem.trading_cost_eur_per_mwh * (
+        check.throughput.ac_charge_mwh + check.throughput.ac_discharge_mwh
+    )
+    recomputed = revenue - deg - trading + terminal
     obj = _finite(solver_obj)
     if obj is None or not math.isclose(
         obj, recomputed, rel_tol=_OBJECTIVE_RTOL, abs_tol=_OBJECTIVE_ATOL_EUR
@@ -364,6 +368,7 @@ def _verify(
         expected_revenue_eur=revenue,
         degradation_cost_eur=deg,
         terminal_value_eur=terminal,
+        trading_cost_eur=trading,
     )
 
 

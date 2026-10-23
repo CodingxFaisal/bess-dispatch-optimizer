@@ -16,7 +16,6 @@ SRC = REPO_ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-import pandas as pd  # noqa: E402
 
 from gridflex.config import GridFlexConfig, load_config  # noqa: E402
 from gridflex.data import MarketDataset, SmardClient, build_market_dataset  # noqa: E402
@@ -67,8 +66,3 @@ def write_provenance(dataset: MarketDataset, out_dir: Path, tag: str) -> Path:
     path = out_dir / f"data_provenance_{tag}.json"
     path.write_text(json.dumps(dataset.provenance(), indent=2), encoding="utf-8")
     return path
-
-
-def legacy_frame(dataset: MarketDataset) -> pd.DataFrame:
-    """Local-time frame expected by the v0.1 forecasters and backtest."""
-    return dataset.to_legacy_frame()

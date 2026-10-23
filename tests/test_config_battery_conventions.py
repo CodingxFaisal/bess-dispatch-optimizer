@@ -13,6 +13,9 @@ from tests_helpers import DEFAULT_CONFIG
 def _load(tmp_path: Path, **battery: Any) -> Any:
     raw = yaml.safe_load(DEFAULT_CONFIG.read_text(encoding="utf-8"))
     raw["battery"].update(battery)
+    # These tests concern battery conventions; the default backtest includes a
+    # heuristic strategy that only supports the cyclic policy.
+    raw.pop("backtest")
     path = tmp_path / "c.yaml"
     path.write_text(yaml.safe_dump(raw), encoding="utf-8")
     return load_config(path)

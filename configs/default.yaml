@@ -224,8 +224,27 @@ forecasting:
     recalibrate_every_days: 7
 
 # -----------------------------------------------------------------------------
-# Economics: investment metrics (payback, NPV) are computed only when every
-# required input is configured. Left unset by default (audit D13).
+# Backtest: rolling day-ahead strategy evaluation. One local delivery day at a
+# time: decide at D-1 12:00, commit the full-day schedule, settle at realised
+# day-ahead prices, carry the physically simulated energy to D+1.
+# Forecast models and windows are the configurations selected in Stage 5 on
+# 2023 (docs/RESULTS.md section 1); the period is the forecasting hold-out.
+# -----------------------------------------------------------------------------
+backtest:
+  period: {start_day: 2024-01-01, end_day: 2025-10-01}
+  on_failure: idle        # idle: commit no trades and flag the day | abort
+  strategies:
+    - {name: perfect_foresight, kind: perfect_foresight}
+    - {name: forecast_gbr, kind: forecast, model: gbr, window_days: 728, max_depth: 6}
+    - {name: forecast_lasso, kind: forecast, model: lasso, window_days: 728}
+    - {name: forecast_persistence, kind: forecast, model: persistence}
+    - {name: heuristic_persistence, kind: heuristic, model: persistence}
+
+# -----------------------------------------------------------------------------
+# Economics. Investment metrics (payback, NPV) are computed only when every
+# required input is configured; they are left unset by default (audit D13).
 # -----------------------------------------------------------------------------
 economics:
+  trading_cost_eur_per_mwh: 0.0     # per MWh bought + sold; exchange/clearing fees
+  trading_cost_source: not modelled (0); set from the exchange fee schedule if used
   capex_eur_per_kwh: null
