@@ -347,3 +347,49 @@ Command: `uv run python scripts/run_backtest.py --offline`: 5 strategies × 639 
   - exact 2× scale invariance between 5 MW/20 MWh and 10 MW/40 MWh, and between 20 MW/20 MWh and 10 MW/10 MWh, with identical EUR/MW-yr;
   - benchmark monotonicity in all five parameters;
   - all derived ratios quoted in RESULTS §3 were recomputed from the CSVs.
+
+---
+
+## Stage 8: Streamlit UI and exports (2026-10-23)
+
+**Environment:**
+
+- As Stage 7, plus `streamlit` 1.66.1 (Apache-2.0) and `plotly` 7.1.0 (MIT) in `uv.lock`.
+- Branch `gridflex/stage-8-ui`, uncommitted working tree.
+
+### Automated checks
+
+| Command | Result |
+|---|---|
+| `uv run pytest` | **450 passed**, 5 deselected (network) |
+| `uv run pytest --cov=gridflex` | 98 % total. `reporting/export.py` 100 %, `figures.py` 99 %, `runs.py` 99 % |
+| `uv run ruff check …` / `ruff format --check …` (now including `app/`) | all passed |
+| `uv run mypy` | Success, 42 files |
+| Clean copy, **pip** route (`pip install -r requirements-dev.txt -e .`) | 450 passed |
+| Clean copy, **uv** route (`uv sync --locked`) | 450 passed |
+
+### Tests added in Stage 8
+
+| File | What it checks |
+|---|---|
+| `tests/reporting/test_reporting.py` (18) | Built on a complete mini run directory produced offline from the SMARD fixture (backtest, finance, forecast evaluation, sensitivity). Checks: run loading (335 market intervals = 14 × 24 − 1); missing parts listed; methodology warnings; finance export refuses another config's run. **All 19 figures** pass `label_check` (title has range and timezone; every value axis has a unit); the dispatch figure has 47 intervals (23 h + 24 h) with charge negative; `label_check` detects problems. **AST check that `app/` imports no modelling package** (optimisation, backtest, forecasting, battery, finance, settlement, data, PuLP, HiGHS, scikit-learn). Every one of the 6 pages renders under `AppTest` with no exception and no labelling error. Overview metrics and warnings; dispatch strategy selection; an empty run directory shows guidance, not an error; config YAML and metadata JSON exports round-trip |
+| `tests/test_packaging.py` (1) | pip requirement exports contain every declared dependency, and no dev-only package leaks into runtime (audit D26). Verified to fail on the old, stale files |
+
+### Browser check (real run)
+
+The real 2024–2025 run outputs were served with `streamlit run app/streamlit_app.py` in the in-app browser. Each page was checked through the DOM, because screenshots timed out while the window was not in front.
+
+| Page | Plotly charts | Exceptions | Notes |
+|---|--:|--:|---|
+| Overview | – | 0 | 6 methodology warnings (incl. dirty tree, unsourced degradation), 5 strategy metrics, asset table, solver status (max MIP gap 9.0e-16), data freshness |
+| Market data | 3 | 0 | titles show range + Europe/Berlin; axes in EUR/MWh, h, MW |
+| Forecast evaluation | 3 | 0 | hold-out 2024-01-01 to 2025-09-30; point-forecast notice |
+| Dispatch | 1 (3 panels) | 0 | diagnostics: 639/639 days ok, max daily EFC 1.5000, start energy 10.000000 MWh throughout |
+| Financial analysis | 4 | 0 | investment shown as "Not computed" with the missing inputs |
+| Experiment comparison | 2 | 0 | 6 downloads (4 CSV, YAML config, JSON metadata), all served HTTP 200 |
+
+The browser console showed 404s for `/<page>/_stcore/health` when a page URL was opened directly. This is Streamlit's frontend probing a sub-path before falling back to `/_stcore/health` (200); it is not an app error.
+
+### Finding during Stage 8
+
+**D26.** The pip requirement files were stale since Stage 4 (see AUDIT §15). They have been fixed, are now guarded by a test, and both install routes were verified.
