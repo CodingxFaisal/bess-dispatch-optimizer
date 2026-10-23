@@ -317,5 +317,8 @@ Key design decisions:
 | D16 | README claims withdrawn | Stage 2 |
 | D3 (failed solves settled) | resolved in the optimiser: no schedule unless proven optimal and independently verified; the v0.1 backtest still uses the v0.1 MILP until Stage 6 | Stage 4; Stage 6 |
 | D24, D25 | resolved | Stage 4 |
-| D2, D4, D10, D14, D15 (run metadata), D17, D18, D23 | open | Stages 5–6 |
+| D10 (DST lag misalignment) | resolved: wall-clock lags with a documented DST rule | Stage 5; BACKTEST_METHODOLOGY §1.2 |
+| D14 (forecast evaluation) | resolved for forecasts: MAE/RMSE/rMAE and DM tests on a hold-out separate from selection, plus a LEAR-style Lasso baseline. The heuristic dispatch baseline follows in Stage 6 | Stage 5 |
+| D1 (forecast leakage) | additionally enforced at runtime: publication-time guards in every forecast, plus an end-to-end corruption test | Stage 5 |
+| D2, D4, D15 (run metadata), D17, D18, D23 | open: v0.1 backtest | Stage 6 |
 

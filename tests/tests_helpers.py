@@ -166,3 +166,40 @@ def toy_battery(**overrides: object) -> BatteryModel:
     )
     params.update(overrides)
     return BatteryModel(**params)  # type: ignore[arg-type]
+
+
+# --------------------------------------------------------------------------- #
+# Synthetic market data for forecasting tests                                 #
+# --------------------------------------------------------------------------- #
+def synthetic_market_frame(
+    start_day: str = "2024-01-01", n_days: int = 120, seed: int = 0, freq: str = "h"
+) -> pd.DataFrame:
+    """UTC-indexed frame over whole Europe/Berlin days (DST included).
+
+    price [EUR/MWh] = 60 + 0.002 * (load - 45 000) + 20 * daily shape
+                      - 8 * weekend + N(0, 4);  load_forecast [MW] smooth.
+    """
+    import numpy as np
+
+    start = pd.Timestamp(start_day).tz_localize("Europe/Berlin")
+    end = start + pd.offsets.Day(n_days)
+    local = pd.date_range(start, end, freq=freq, inclusive="left")
+    rng = np.random.default_rng(seed)
+    hour = local.hour + local.minute / 60
+    weekend = (local.day_of_week >= 5).astype(float)
+    load = 45_000 + 8_000 * np.sin((hour - 8) / 24 * 2 * np.pi) - 6_000 * weekend
+    load = (
+        load
+        + 2_000 * np.sin(np.arange(len(local)) / 200)
+        + rng.normal(0, 500, len(local))
+    )
+    price = (
+        60
+        + 0.002 * (load - 45_000)
+        + 20 * np.sin((hour - 13) / 24 * 2 * np.pi)
+        - 8 * weekend
+        + rng.normal(0, 4, len(local))
+    )
+    return pd.DataFrame(
+        {"price": price, "load_forecast": load}, index=local.tz_convert("UTC")
+    )

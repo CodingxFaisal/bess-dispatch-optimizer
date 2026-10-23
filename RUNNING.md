@@ -73,6 +73,18 @@ uv run python scripts/compare_optimizers.py --offline
 - `check_v01_schedules.py`: every v0.1 schedule vs the independent physics checker.
 - `compare_optimizers.py`: the Stage 4 HiGHS model vs the v0.1 MILP, day by day, with solve reports in `runs/latest/optimizer_comparison.csv`.
 
+## 4b. Forecast evaluation (Stage 5)
+
+```bash
+uv run python scripts/download_data.py --start 2021-01-01 --end 2025-10-01
+```
+
+```bash
+uv run python scripts/evaluate_forecasts.py --offline
+```
+
+Selects models on 2023 and scores them once on 2024-01-01 → 2025-09-30. This takes about 6 minutes. Outputs go to `runs/latest/forecast_evaluation/`; results are summarised in `docs/RESULTS.md`.
+
 ## Troubleshooting
 
 - **Windows: missing modules after install** (for example `No module named 'sklearn.metrics._pairwise_distances_reduction...'` or `pydantic`). The project or virtual-environment path is too long for Windows' 260-character limit, and some package files were not written. Use a shorter path (such as `C:\src\gridflex`) or enable Windows long-path support, then reinstall.
