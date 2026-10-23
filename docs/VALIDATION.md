@@ -464,7 +464,17 @@ Runtimes differ from earlier records (backtest 3.2 vs 8.7 min, sensitivity 7.6 v
 - **RUNNING:** the minimal example section and measured runtime ranges.
 - **AUDIT:** §16, definition of done.
 
-### Not verified
+### GitHub Actions CI
 
-- **GitHub Actions CI** (Ubuntu and Windows) has not run. The branches were pushed and a pull request was opened, closed and reopened. A `push` trigger for `gridflex/**` was added (commit `f4f8b27`). GitHub created no workflow runs in 30 minutes of watching. The repository's Actions settings allow all actions, billing shows no lock, and GitHub Status was operational. The cause is still unknown.
-- **Linux and macOS** behaviour is untested locally.
+**Before the merge**, no run started for the pushed feature branches or for PR #1. This held even after the PR was closed and reopened and a `gridflex/**` push trigger was added (`f4f8b27`).
+
+**After the merge**, the workflow ran for the first time.
+
+PR #1 was merged as commit `1dec3e8` on 2026-10-23, and run `40024899301` passed:
+
+| Job | Ruff | mypy | pytest | Coverage |
+|---|---|---|---|--:|
+| ubuntu-latest | passed | 43 files, no issues | 452 passed, 5 deselected | 98 % |
+| windows-latest | passed | 43 files, no issues | 452 passed, 5 deselected | 98 % |
+
+**Not verified:** macOS. Linux and Windows are covered by CI.

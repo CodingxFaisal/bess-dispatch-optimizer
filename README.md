@@ -9,7 +9,7 @@ It downloads real German market data, forecasts the next day's prices using only
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Data: SMARD CC BY 4.0](https://img.shields.io/badge/data-SMARD%20CC%20BY%204.0-orange.svg)](https://www.smard.de/)
-![Tests: 452 passing](https://img.shields.io/badge/tests-452%20passing%20(local)-brightgreen.svg)
+[![CI](https://github.com/CodingxFaisal/bess-dispatch-optimizer/actions/workflows/ci.yml/badge.svg)](https://github.com/CodingxFaisal/bess-dispatch-optimizer/actions/workflows/ci.yml)
 
 > Historical backtest revenue is **not** a forecast of future revenue. Read [Limitations](#limitations) before quoting any number.
 
@@ -380,7 +380,7 @@ uv run mypy
 | **App** | Every page renders; every chart is labelled; the app imports no modelling code |
 | **Integration** | The one-command example runs end to end as a separate process |
 
-GitHub Actions is configured (`.github/workflows/ci.yml`: Ruff, mypy and pytest on Ubuntu and Windows). Its runs have not yet appeared on GitHub, so the results above are from local runs on Windows ([docs/VALIDATION.md](docs/VALIDATION.md)).
+GitHub Actions (`.github/workflows/ci.yml`) runs Ruff, mypy and pytest on Ubuntu and Windows on every push to `main` and every pull request. The first run, on the merge of the rebuild, passed on both: 452 tests each ([docs/VALIDATION.md](docs/VALIDATION.md)).
 
 ---
 

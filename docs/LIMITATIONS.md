@@ -56,6 +56,6 @@ What GridFlex does not model, the assumptions it makes, and how each affects the
 
 | Limitation | Effect |
 |---|---|
-| CI is configured (GitHub Actions; Ubuntu and Windows), but GitHub has not created any workflow runs for this repository, although the branches are pushed and a pull request is open. The repository's Actions settings allow all actions; the cause is not yet known. | Cross-platform behaviour is verified on Windows only. |
+| CI (GitHub Actions) runs on Ubuntu and Windows and passes. macOS is not tested. | Behaviour on macOS is unverified. |
 | On Windows, deep install paths can exceed the 260-character limit and silently break package installs (observed with scikit-learn). | Use a short path or enable long-path support (RUNNING.md). |
 | The Streamlit UI is a viewer: it cannot launch runs or change assumptions. | Re-run the scripts to refresh results. |
