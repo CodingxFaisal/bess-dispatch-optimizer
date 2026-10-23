@@ -1,148 +1,282 @@
 # GridFlex
 
-Battery energy storage (BESS) dispatch optimisation and day-ahead market research for the German–Luxembourg (DE-LU) bidding zone.
+**Battery energy storage (BESS) dispatch optimisation and day-ahead market research for the German–Luxembourg (DE-LU) electricity market.**
 
-GridFlex turns price forecasts into physically feasible battery schedules and evaluates them against realised market prices. The goal is that every reported number can be traced to source data, asset configuration, model settings and a stated methodology.
+GridFlex answers a practical question: *how much money can a grid-scale battery earn by trading on the day-ahead electricity market, and how much of that depends on how well it forecasts prices?*
 
-> **Status: all nine rebuild stages complete (v0.2.0.dev0).** The repository was rebuilt from v0.1.0 (`bess-dispatch-optimizer`) following an audit, [docs/AUDIT.md](docs/AUDIT.md). CI is configured but has not yet run on GitHub (the branches are not pushed); see [docs/LIMITATIONS.md](docs/LIMITATIONS.md) §6.
->
-> **The v0.1.0 headline results are withdrawn.** The "84.5 % foresight capture" of the gradient-boosting strategy relied on PV and wind forecasts that are only published after the day-ahead bidding deadline. Without them the same model captured 70.8 % in an audit rerun, which is below a seasonal-naive forecast. The old outputs are kept, labelled, in [results/legacy_v0.1.0/](results/legacy_v0.1.0/README.md). Results from the rebuilt, validated pipeline are in [docs/RESULTS.md](docs/RESULTS.md).
->
-> Historical backtest revenue is not a forecast of future revenue.
+It downloads real German market data, forecasts the next day's prices using only information that was public at bidding time, and computes the most profitable charge/discharge plan that the battery can physically deliver. It then settles that plan against the prices that actually cleared, every day over almost two years, and reports revenue, cycling, financial metrics and sensitivities. Each number is traced back to its source data, configuration and code version.
+
+[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Data: SMARD CC BY 4.0](https://img.shields.io/badge/data-SMARD%20CC%20BY%204.0-orange.svg)](https://www.smard.de/)
+![Tests: 452 passing](https://img.shields.io/badge/tests-452%20passing%20(local)-brightgreen.svg)
+
+> Historical backtest revenue is **not** a forecast of future revenue. Read [Limitations](#limitations) before quoting any number.
 
 ---
 
-## Research questions
+## Contents
+
+- [What it does](#what-it-does)
+- [Key results](#key-results)
+- [How it works](#how-it-works)
+- [Quick start](#quick-start)
+- [Running the full study](#running-the-full-study)
+- [The web app](#the-web-app)
+- [Configuration](#configuration)
+- [Testing and quality](#testing-and-quality)
+- [Reproducibility](#reproducibility)
+- [Limitations](#limitations)
+- [Project structure](#project-structure)
+- [Documentation](#documentation)
+- [Data, attribution and licences](#data-attribution-and-licences)
+- [Project history](#project-history)
+- [Author](#author)
+
+---
+
+## What it does
+
+A battery earns money on the day-ahead market by **buying electricity when it is cheap and selling it when it is expensive** (energy arbitrage). Doing this well requires solving three problems at once:
+
+1. **Forecasting.** Bids for tomorrow close at 12:00 today, before tomorrow's prices are known.
+2. **Optimisation.** Find the schedule that maximises value within the battery's power, energy, efficiency and cycling limits.
+3. **Honest evaluation.** Measure what that schedule *really* earns at the prices that cleared, without accidentally using information from the future.
+
+GridFlex implements all three and compares five strategies under identical conditions:
+
+| Strategy | Price information | How the schedule is made |
+|---|---|---|
+| **Perfect foresight** | Actual prices (impossible in practice) | Optimiser. The upper bound on revenue |
+| **GBR forecast + optimiser** | Gradient-boosting forecast | Optimiser |
+| **Lasso forecast + optimiser** | LEAR-style Lasso forecast | Optimiser |
+| **Persistence + optimiser** | Yesterday's prices | Optimiser |
+| **Persistence + heuristic** | Yesterday's prices | Simple rule: charge in the cheapest block, discharge in the dearest |
+
+It is built to answer five research questions:
 
 1. How much does a forecast-driven battery strategy earn under realistic constraints?
-2. How much value is lost relative to a perfect-foresight upper benchmark?
+2. How much value is lost relative to perfect foresight?
 3. How do power, energy capacity, efficiency, degradation and cycling limits affect results?
-4. Does uncertainty-aware optimisation improve realised performance?
+4. Does uncertainty-aware optimisation improve realised performance? *(Not yet answered: only point forecasts are implemented.)*
 5. Which assumptions materially change the financial conclusions?
 
-## Stage plan
+---
 
-| Stage | Scope | State |
+## Key results
+
+The default battery is **10 MW / 20 MWh** (2 hours), with 86 % round-trip efficiency and a 5–95 % state-of-charge window. It is limited to 1.5 full cycles per day and charged a degradation cost per MWh discharged. All results cover the **hold-out period of 1 January 2024 to 30 September 2025 (639 days)**. That period was not used to select any model.
+
+**Price forecast accuracy**:
+
+| Model | MAE (EUR/MWh) | Relative to seasonal naive |
+|---|--:|--:|
+| Gradient boosting (GBR) | **22.18** | 0.682 |
+| Lasso, LEAR-style | 22.44 | 0.690 |
+| Persistence (yesterday) | 27.07 | 0.832 |
+| Seasonal naive (last week) | 32.55 | 1.000 |
+
+GBR and Lasso are statistically indistinguishable (Diebold-Mariano p = 0.30). Source: [RESULTS §1](docs/RESULTS.md#1-day-ahead-price-forecast-accuracy).
+
+**Battery revenue over 639 days**:
+
+| Strategy | Net operating revenue (EUR) | EUR per MW per year | Share of perfect foresight | Loss-making days |
+|---|--:|--:|--:|--:|
+| Perfect foresight (benchmark) | 942,903 | 53,859 | 100 % | 0 |
+| Lasso + optimiser | 790,226 | 45,138 | 83.8 % | 57 |
+| GBR + optimiser | 781,601 | 44,645 | 82.9 % | 60 |
+| Persistence + optimiser | 712,570 | 40,702 | 75.6 % | 75 |
+| Persistence + heuristic | 407,114 | 23,255 | 43.2 % | 88 |
+
+Sources: [RESULTS §2](docs/RESULTS.md#2-day-ahead-dispatch-backtest-hourly-regime) and [§3](docs/RESULTS.md#3-financial-metrics-and-sensitivity).
+
+**What this shows:**
+
+- **Good forecasts are worth about 8 percentage points** of the benchmark compared with using yesterday's prices.
+- **The optimiser matters more than the forecast.** With the same forecast, it earns 1.75× the simple heuristic.
+- **Battery duration and degradation cost dominate the economics.** A 4-hour battery earns about 1.65× more per MW than a 2-hour one. Doubling the degradation cost removes about 27 % of forecast-driven revenue ([RESULTS §3.3](docs/RESULTS.md#33-sensitivity-one-at-a-time-perfect-foresight-and-gbr--milp)).
+
+These figures are **net operating revenue**: market revenue minus degradation cost. They are **not profit**, because capital cost, O&M, grid fees, taxes and financing are excluded. The degradation cost is a placeholder without a cited source; see [Limitations](#limitations).
+
+---
+
+## How it works
+
+```mermaid
+flowchart LR
+    A[SMARD.de<br/>prices + load forecast] --> B[Download, cache,<br/>validate]
+    B --> C[Features known<br/>at 12:00 D-1]
+    C --> D[Price forecast<br/>for day D]
+    D --> E[MILP optimiser<br/>PuLP + HiGHS]
+    E --> F[Independent<br/>physics check]
+    F --> G[Settle at<br/>actual prices]
+    G --> H[Carry battery state<br/>to next day]
+    H --> C
+    G --> I[Finance and<br/>sensitivity]
+    I --> J[Streamlit app<br/>and CSV exports]
+```
+
+### 1. Market data
+- **Source:** the German regulator's [SMARD.de](https://www.smard.de/) platform. GridFlex uses the DE-LU day-ahead price (series 4169) and the day-ahead grid-load forecast (series 411), hourly from 2021 to September 2025.
+- **Download and cache:** every download is cached byte-for-byte with a SHA-256 checksum and a provenance record, so later runs can work offline. Requests use timeouts and bounded retries.
+- **Validation:** the data is checked for gaps, duplicates, timestamps off the time grid, resolution changes, values outside the legal price limits, and the 23- and 25-hour clock-change days. **Nothing is ever filled in or invented**: a gap in prices stops the run.
+- **Units:** SMARD reports load as MWh per interval, which GridFlex converts to average MW.
+
+### 2. Information timing (no look-ahead)
+Day-ahead bids for day D close at **12:00 (Berlin time) on D−1**. Every input carries the time it was published, and guards raise an error if a forecast tries to use anything published later.
+
+| Input | Published | Used? |
 |---|---|---|
-| 1 | Audit and implementation plan | done ([AUDIT](docs/AUDIT.md)) |
-| 2 | Configuration, data contracts, validation | done ([DATA_DICTIONARY](docs/DATA_DICTIONARY.md)) |
-| 3 | Battery physics and hand-verifiable tests | done ([MATHEMATICAL_MODEL](docs/MATHEMATICAL_MODEL.md) §2) |
-| 4 | Optimisation model (PuLP + HiGHS) and solver diagnostics | done ([MATHEMATICAL_MODEL](docs/MATHEMATICAL_MODEL.md) §3) |
-| 5 | Forecast baselines and leakage tests | done ([BACKTEST_METHODOLOGY](docs/BACKTEST_METHODOLOGY.md) §1, [RESULTS](docs/RESULTS.md) §1) |
-| 6 | Rolling backtest and settlement | done ([BACKTEST_METHODOLOGY](docs/BACKTEST_METHODOLOGY.md) §2, [RESULTS](docs/RESULTS.md) §2) |
-| 7 | Financial metrics and sensitivity analysis | done ([RESULTS](docs/RESULTS.md) §3) |
-| 8 | Streamlit UI and exports | done ([VALIDATION](docs/VALIDATION.md)) |
-| 9 | Integration tests, clean-environment reproduction, documentation | done ([VALIDATION](docs/VALIDATION.md), [ARCHITECTURE](docs/ARCHITECTURE.md), [LIMITATIONS](docs/LIMITATIONS.md)) |
+| Prices up to D−1 | 13:00 on D−2 or earlier | yes |
+| Load forecast for D | about 10:00 on D−1 | yes |
+| Solar and wind forecasts for D | about 18:00 on D−1 | **no**: after the deadline |
 
-## Key results (hold-out 2024-01-01 → 2025-09-30, 639 days)
+A test corrupts all data after the decision time and checks that the forecasts stay identical, bit for bit.
 
-Each figure comes from a recorded run; the linked section gives the command, code version and full table.
+### 3. Price forecasting
+Four models predict all 24 hourly prices of day D:
 
-- **Forecast accuracy** ([RESULTS §1.2](docs/RESULTS.md)): GBR MAE 22.18 EUR/MWh (rMAE 0.682), LEAR-style Lasso 22.44 (0.690), persistence 27.07, seasonal naive 32.55. GBR and Lasso are statistically indistinguishable (DM p = 0.30).
-- **Dispatch** ([RESULTS §2.1](docs/RESULTS.md)), 10 MW / 20 MWh, net operating revenue over 639 days:
-  - perfect foresight 942,903 EUR (benchmark, not deployable);
-  - Lasso + MILP 790,226 EUR (83.8 % of the benchmark);
-  - GBR + MILP 781,601 EUR (82.9 %);
-  - persistence + MILP 712,570 EUR (75.6 %);
-  - persistence + two-window heuristic 407,114 EUR (43.2 %).
-- **Normalised** ([RESULTS §3.2](docs/RESULTS.md)): GBR + MILP 44,645 EUR/MW-yr on a 365-day basis; perfect foresight 53,859 EUR/MW-yr.
-- **Sensitivity** ([RESULTS §3.3](docs/RESULTS.md)): duration and degradation cost dominate. The degradation cost is an unsourced placeholder, so absolute figures should not be relied on.
+- **Persistence:** yesterday's price at the same clock time.
+- **Seasonal naive:** last week's price at the same clock time. Accuracy is reported relative to this benchmark.
+- **LEAR-style Lasso:** a regularised linear model on lagged prices, the load forecast and calendar effects. Prices are transformed with an inverse hyperbolic sine, and the model is re-trained daily on a rolling 2-year window.
+- **Gradient boosting (GBR):** scikit-learn's `HistGradientBoostingRegressor` on the same features, re-trained weekly.
 
-These are net operating revenue, not profit, and do not predict future revenue ([LIMITATIONS](docs/LIMITATIONS.md)). The from-scratch clean-environment reproduction is recorded in [VALIDATION](docs/VALIDATION.md) (Stage 9).
+All preprocessing is fitted on training data only. Configurations were chosen on 2023, and the chosen ones were then scored **once** on the 2024–2025 hold-out using MAE, RMSE, relative MAE and Diebold-Mariano tests.
 
-## What exists now
+### 4. Battery model
+The battery's stored energy follows the state equation
 
-- **Validated configuration** (`gridflex.config`, [configs/default.yaml](configs/default.yaml)):
-  - pydantic models with units in the field names;
-  - one-way efficiencies (or a round-trip figure split once, never applied twice);
-  - explicit conventions for degradation, cycle counting and terminal energy;
-  - dated market rules: 60-minute day-ahead MTU until 2025-09-30 and 15-minute from 2025-10-01, plus harmonised price limits;
-  - the SMARD series catalogue with publication-time rules.
-- **SMARD data layer** (`gridflex.data`):
-  - timeouts, bounded retries and request pacing;
-  - a raw cache that keeps payloads byte-for-byte with provenance sidecars, under a documented invalidation policy;
-  - an offline mode;
-  - conversion from SMARD's "MWh per interval" to mean MW;
-  - UTC identity with Europe/Berlin calendar handling (23 h and 25 h days);
-  - validation that reports gaps, nulls, duplicates, off-grid timestamps, resolution mismatches and out-of-range values, and **never fills or invents data**.
-- **Battery physics** (`gridflex.battery`):
-  - the state equation with per-interval durations (handles 23/25 h days and 15-minute intervals);
-  - AC/DC throughput accounting with an energy-balance identity;
-  - equivalent full cycles on a stated basis (default: energy leaving the cells over the usable window);
-  - degradation cost on DC or AC discharge;
-  - cyclic, fixed or explicitly valued free terminal policies;
-  - availability derating;
-  - an independent feasibility checker that verifies any schedule against all physical limits.
-- **Dispatch optimisation** (`gridflex.optimization`):
-  - a price-taking day-ahead MILP built in PuLP and solved with HiGHS;
-  - per-interval durations, asymmetric power, availability profiles, cycle caps, all three terminal policies, and binary charge/discharge exclusivity;
-  - a `SolveReport` with status, termination reason, objective, dual bound, MIP gap, runtime and solver version;
-  - no schedule is returned unless optimality is proven *and* the independent physics check and objective recomputation both pass.
-- **Price forecasting** (`gridflex.forecasting`):
-  - persistence, seasonal-naive, LEAR-style Lasso and gradient-boosting models;
-  - forecasts are issued at the 12:00 gate closure, with every input's publication time tracked and leakage guards that raise;
-  - forecast records carry their origin, cutoffs, model version and config;
-  - models are selected on 2023 and evaluated once on a hold-out (2024 to Sep 2025). Results: [RESULTS §1](docs/RESULTS.md).
-- **Rolling backtest and settlement** (`gridflex.backtest`, `gridflex.settlement`):
-  - the strategy is day-ahead only, with a full-day commitment made at D−1 12:00;
-  - it compares perfect foresight, forecast-driven MILP strategies and a two-window heuristic under identical assumptions;
-  - failed or invalid days are flagged and never settled as optimised;
-  - the charge level is carried between days physically;
-  - every run records its metadata (git commit, config fingerprint, package versions).
+$$E_t = E_{t-1} + \eta^{ch} P^{ch}_t \Delta t - \frac{P^{dis}_t \Delta t}{\eta^{dis}}$$
 
-  Results: [RESULTS §2](docs/RESULTS.md).
-- **Financial metrics and sensitivity** (`gridflex.finance`):
-  - annualised (365-day basis) and normalised revenue, period tables flagged when incomplete, and a forecast capture ratio with a precise definition;
-  - payback and NPV only when every input is configured;
-  - one-at-a-time sensitivity to power, duration, efficiency, degradation cost and cycle cap.
+The model applies:
+- power limits at the grid connection;
+- the state-of-charge window;
+- separate charge and discharge efficiencies, each √0.86 for a round-trip of 0.86;
+- interval lengths that handle 23- and 25-hour days;
+- a daily cycle cap;
+- degradation cost per MWh leaving the cells;
+- a choice of end-of-day policy (return to start, fixed level, or a valued free level).
 
-  Results: [RESULTS §3](docs/RESULTS.md).
-- **Streamlit UI** (`app/`): a read-only viewer of saved runs with six pages: overview, market data, forecast evaluation, dispatch, financial analysis and experiment comparison.
-  - Plotly charts state their units, time range and timezone.
-  - CSV, configuration (YAML) and run-metadata (JSON) downloads are available.
-  - The UI contains no modelling code (enforced by a test).
-- **Information-availability registry** (`gridflex.data.availability`): it knows what was public at the 12:00 gate closure and raises `InformationLeakageError` otherwise.
+An **independent feasibility checker** re-simulates every schedule and rejects any that breaks a limit.
 
-## Quick start: one-command example
+### 5. Optimisation
+Each day is a mixed-integer linear program (MILP):
+
+$$\max \sum_t \pi_t \left(P^{dis}_t - P^{ch}_t\right)\Delta t \;-\; c^{deg} \sum_t \frac{P^{dis}_t \Delta t}{\eta^{dis}}$$
+
+The constraints are the state equation, the power and energy bounds, the cycle cap, the end-of-day energy, and a binary variable per interval that forbids charging and discharging at the same time. That binary matters at negative prices, where a linear relaxation would "burn" energy through losses for profit.
+
+The model is built with **PuLP** and solved with **HiGHS**. A schedule is accepted only if:
+
+- HiGHS's own status proves optimality;
+- the independent physics check passes;
+- the recomputed objective matches the solver's.
+
+This matters because PuLP reports time-limited, unproven solutions as "Optimal".
+
+### 6. Rolling backtest and settlement
+The engine runs one cycle per delivery day:
+
+1. **Decide** at D−1 12:00 with that day's information.
+2. **Commit** the full-day schedule.
+3. **Verify** it physically.
+4. **Settle** it at the realised prices.
+5. **Carry** the physically simulated end-of-day energy into D+1.
+
+A day whose plan fails is committed idle and flagged; it is never counted as an optimised result. Planned (forecast) value and realised value are reported separately. Every run saves metadata: git commit and dirty flag, configuration fingerprint, package versions and data provenance.
+
+### 7. Finance and sensitivity
+- **Standard metrics:** annualised revenue on a 365-day basis, EUR per MW-year, EUR per MWh-year, cycles per day, and monthly and yearly tables with incomplete periods flagged.
+- **Forecast capture ratio:** strategy revenue ÷ perfect-foresight revenue over the same days.
+- **Payback and NPV:** computed only when capital and O&M costs are configured. By default they are not, so no payback is claimed.
+- **Sensitivity:** one assumption varied at a time across power, duration, efficiency, degradation cost and the cycle cap. Each variant is a full 639-day backtest.
+
+Full equations: [docs/MATHEMATICAL_MODEL.md](docs/MATHEMATICAL_MODEL.md). Full protocol: [docs/BACKTEST_METHODOLOGY.md](docs/BACKTEST_METHODOLOGY.md).
+
+---
+
+## Quick start
+
+**Requirements:** Python 3.12 and [uv](https://docs.astral.sh/uv/getting-started/installation/). uv installs Python 3.12 itself if needed. No API keys or accounts are needed.
+
+```bash
+git clone https://github.com/CodingxFaisal/bess-dispatch-optimizer.git
+```
+
+```bash
+cd bess-dispatch-optimizer
+```
 
 ```bash
 uv sync
 ```
+
+`uv sync` creates `.venv/` with the exact package versions from `uv.lock`. Both solvers (HiGHS and CBC) are installed as Python packages, with no separate install.
+
+**Run the tests** (offline, about 1 minute):
+
+```bash
+uv run pytest
+```
+
+**Run the one-command example** (offline, a few seconds):
 
 ```bash
 uv run python scripts/run_example.py
 ```
 
-This runs the whole pipeline offline in a few seconds on the committed SMARD fixture (9 delivery days around the March 2024 clock change): validated data, leakage-guarded forecasts, HiGHS dispatch with independent verification, settlement, financial metrics and a sensitivity sweep. It writes `runs/example/`, which you can open in the viewer:
+This runs the **entire pipeline** on a small extract of real SMARD data that ships with the repository (9 delivery days around the March 2024 clock change):
 
-```bash
-GRIDFLEX_RUN_DIR=runs/example uv run streamlit run app/streamlit_app.py
+- data validation;
+- forecasts with leakage checks;
+- optimised dispatch with verification;
+- settlement, finance and sensitivity.
+
+It writes `runs/example/`. Its numbers demonstrate the workflow and are not research results.
+
+**Open the example in the web app.** In PowerShell (Windows):
+
+```powershell
+$env:GRIDFLEX_RUN_DIR = "runs/example"
 ```
 
-The example demonstrates the workflow; its numbers are not research results. The same command is exercised by the integration test (`tests/test_integration.py`).
-
-## Setup
-
-Requires Python 3.12 and [uv](https://docs.astral.sh/uv/). Both solvers install with the Python dependencies, with no system install: HiGHS (MIT licence, via `highspy`), the default, and CBC (EPL-2.0, bundled with PuLP), available as `optimization.solver: cbc`.
+In bash (macOS, Linux, Git Bash):
 
 ```bash
-uv sync
-uv run pytest
+export GRIDFLEX_RUN_DIR=runs/example
 ```
 
-Exact dependency versions are pinned in `uv.lock`. Pip users can install from the exported `requirements.txt` (runtime) or `requirements-dev.txt` (runtime plus tests and lint).
-
-Other checks:
+Then start the app:
 
 ```bash
-uv run ruff check src tests scripts notebooks app
-uv run mypy
-uv run pytest -m network
+uv run streamlit run app/streamlit_app.py
 ```
 
-The last command runs live contract checks against smard.de and is opt-in.
+Your browser opens at <http://localhost:8501>.
 
-## Running the pipeline
+**Using VS Code:**
+1. Open the folder.
+2. Run `uv sync` in the integrated terminal.
+3. Choose the `.venv` interpreter (**Ctrl+Shift+P → Python: Select Interpreter**).
+4. Run the commands above in the terminal.
+
+**Without uv:**
+
+```bash
+python -m venv .venv
+```
+
+```bash
+.venv/Scripts/python -m pip install -r requirements-dev.txt -e .
+```
+
+On macOS or Linux, use `.venv/bin/python` instead.
+
+---
+
+## Running the full study
+
+These commands reproduce everything in [docs/RESULTS.md](docs/RESULTS.md). They take about 20 minutes and need internet access for the first command only.
 
 ```bash
 uv run python scripts/download_data.py --start 2021-01-01 --end 2025-10-01
@@ -164,78 +298,196 @@ uv run python scripts/run_finance.py
 uv run python scripts/run_sensitivity.py --offline
 ```
 
-1. The first command downloads and validates the SMARD data. Raw payloads are cached under `data/cache/`, and every run records its provenance.
-2. The second selects forecast models on 2023 and scores them once on the hold-out, 2024 to Sep 2025.
-3. The third backtests the configured strategies over the hold-out.
-4. The fourth computes financial metrics from that backtest; it refuses runs made with a different config.
-5. The fifth runs the one-at-a-time sensitivity analysis (8–15 minutes).
+| Step | What it does | Typical time |
+|---|---|--:|
+| `download_data.py` | Downloads and validates SMARD prices and load forecasts into `data/cache/` | 35 s |
+| `evaluate_forecasts.py` | Selects forecast models on 2023 and scores them once on the hold-out | 6 min |
+| `run_backtest.py` | Runs all five strategies over 639 days | 3–9 min |
+| `run_finance.py` | Computes financial metrics; refuses a backtest made with a different config | seconds |
+| `run_sensitivity.py` | One-at-a-time sensitivity: 17 variants × 2 strategies, each a full 639-day backtest | 8–15 min |
 
-Then open the viewer:
+Outputs go to `runs/latest/` as CSV files, each folder with a `metadata.json`. Then open the app without `GRIDFLEX_RUN_DIR` to view them:
+
+- PowerShell: `Remove-Item Env:GRIDFLEX_RUN_DIR`
+- bash: `unset GRIDFLEX_RUN_DIR`
+
+Options, flags and troubleshooting are in [RUNNING.md](RUNNING.md).
+
+---
+
+## The web app
+
+`app/streamlit_app.py` is a **read-only viewer** of saved runs. It never runs models itself, and a test enforces that it imports no modelling code. It has six pages:
+
+| Page | Shows |
+|---|---|
+| Overview | Revenue per strategy, methodology warnings, battery configuration, throughput and cycles, solver status, data freshness |
+| Market data | Price history with negative prices, negative-price hours per month, load forecast, data-quality diagnostics |
+| Forecast evaluation | MAE/RMSE per model, forecast vs actual, error distribution, Diebold-Mariano tests |
+| Dispatch | Price, charge/discharge and state of charge for any day and strategy; solver and constraint diagnostics |
+| Financial analysis | Revenue and cost breakdown, monthly and annual tables, battery duration and sensitivity charts, investment status |
+| Experiment comparison | Strategies side by side, cumulative revenue, downloads (CSV, YAML config, JSON metadata) |
+
+Every chart states its units, time range and timezone. You can download the tables as CSV, the run configuration as YAML and the run metadata as JSON.
+
+---
+
+## Configuration
+
+All assumptions live in one validated file, [configs/default.yaml](configs/default.yaml). Unit names are part of every field name (for example `charge_power_mw` and `replacement_cost_eur_per_kwh`), and invalid values are rejected when the file is loaded.
+
+| Section | Contents |
+|---|---|
+| `battery` | Power, capacity, SoC limits, efficiency, cycle cap, degradation, end-of-day policy, availability |
+| `market` | Bidding zone, timezone, 12:00 gate closure, hourly vs 15-minute periods, legal price limits by date |
+| `data` | SMARD series, publication times, cache and retry settings |
+| `optimization` | Solver (HiGHS or CBC), MIP gap, time limit, threads |
+| `forecasting` | Selection and hold-out periods, model grids |
+| `backtest` | Period and strategies |
+| `economics` | Trading cost and investment inputs (empty by default) |
+| `sensitivity` | Values tried in the sensitivity analysis |
+
+After editing it, rerun `run_backtest.py` and then `run_finance.py`.
+
+---
+
+## Testing and quality
 
 ```bash
-uv run streamlit run app/streamlit_app.py
+uv run pytest
 ```
 
-It reads `runs/latest/` by default; change this in the sidebar or with `GRIDFLEX_RUN_DIR`.
+```bash
+uv run ruff check src tests scripts notebooks app
+```
 
-Outputs go to `runs/latest/` (git-ignored), each with `metadata.json`. See [RUNNING.md](RUNNING.md) for details.
+```bash
+uv run ruff format --check src tests scripts notebooks app
+```
+
+```bash
+uv run mypy
+```
+
+| Area | What is tested |
+|---|---|
+| **Coverage** | 452 tests, 98 % line coverage, all offline using a committed SMARD extract. Live SMARD contract tests are opt-in: `uv run pytest -m network` |
+| **Battery physics** | Hand-calculated cases for the state equation, efficiencies, irregular interval lengths, limits, cycle counting, degradation and end-of-day policies |
+| **Optimisation** | Negative, zero and flat prices; a brute-force cross-check; infeasible, time-limited and solver-error cases |
+| **Forecasting** | Leakage: future features raise, and future training rows raise; preprocessing is fitted on training data only; the corruption test |
+| **Backtest** | Settlement by hand; failed days are never counted as optimised; battery state carried between days |
+| **Finance** | Every formula, flags for partial years, investment metrics only with inputs |
+| **App** | Every page renders; every chart is labelled; the app imports no modelling code |
+| **Integration** | The one-command example runs end to end as a separate process |
+
+GitHub Actions is configured (`.github/workflows/ci.yml`: Ruff, mypy and pytest on Ubuntu and Windows). Its runs have not yet appeared on GitHub, so the results above are from local runs on Windows ([docs/VALIDATION.md](docs/VALIDATION.md)).
+
+---
+
+## Reproducibility
+
+- **Locked environment:** exact versions in `uv.lock`, mirrored in `requirements.txt` and `requirements-dev.txt`. A test checks that they stay in sync.
+- **Determinism:** single-threaded solver, fixed random seeds.
+- **Traceable runs:** each run records the git commit, whether the tree was modified, the config fingerprint, package versions and data provenance.
+- **Verified from scratch:**
+  1. a fresh clone of a committed version;
+  2. `uv sync --locked` into a new environment;
+  3. an empty data cache;
+  4. the full study.
+
+  Every output table matched the recorded results **exactly** ([docs/VALIDATION.md](docs/VALIDATION.md), Stage 9).
+- **Separated outputs:** example and new results go to the git-ignored `runs/`. Only the small test fixture and the labelled legacy outputs are committed.
+
+---
+
+## Limitations
+
+The most important ones (full list: [docs/LIMITATIONS.md](docs/LIMITATIONS.md)):
+
+- **Day-ahead market only.** No intraday trading, balancing reserves (FCR/aFRR) or imbalance settlement.
+- **Fixed schedules.** Each day's plan is executed at whatever price clears. Real bids are price-dependent curves.
+- **Price taker.** The battery's bids do not move prices.
+- **The degradation cost (16.67 EUR per MWh discharged) is an unsourced placeholder.** It changes revenue by up to a factor of 1.85 in the sensitivity analysis. Replace it with a cited value before relying on absolute figures.
+- **Simplified battery.** Linear degradation, constant efficiency, no calendar ageing, no outages, no self-discharge.
+- **Single forecast vintage.** SMARD stores one version of each load forecast, so later revisions cannot be ruled out.
+- **Point forecasts only.** Research question 4 (uncertainty-aware dispatch) is open.
+- **Hourly period only so far.** The 15-minute market from 1 October 2025 is supported in the data layer but not yet evaluated.
+- **Not profit, not a prediction.** Revenue excludes capital and operating costs, and past market conditions will change.
+
+---
+
+## Project structure
+
+```
+configs/default.yaml        every physical, market, data and economic assumption
+src/gridflex/
+  config/                   validated configuration models, config fingerprint
+  data/                     SMARD client, raw cache, cleaning, validation, publication times
+  battery/                  physics: state equation, cycles, degradation, feasibility checker
+  optimization/             MILP (PuLP + HiGHS), solve reports, verification
+  forecasting/              features with publication times, four models, evaluation, DM test
+  settlement/               settlement of committed schedules
+  backtest/                 rolling day-ahead engine, strategies, heuristic
+  finance/                  financial metrics, investment metrics, sensitivity
+  reporting/                run metadata, exports, Plotly figures, offline example
+scripts/                    command-line entry points (download, evaluate, backtest, finance, ...)
+app/                        Streamlit viewer (read-only)
+tests/                      unit, property, fixture and integration tests
+docs/                       full documentation (below)
+notebooks/                  exploratory price analysis (VS Code / Jupyter cells)
+results/legacy_v0.1.0/      withdrawn v0.1 outputs, kept for traceability
+```
+
+The architecture, dependency direction and correctness boundaries are described in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+---
 
 ## Documentation
 
 | Document | Contents |
 |---|---|
-| [RUNNING.md](RUNNING.md) | Installation, full historical runs, troubleshooting |
+| [RUNNING.md](RUNNING.md) | Installation, all commands and flags, troubleshooting |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Data flow, packages, correctness boundaries, technology |
-| [docs/DATA_DICTIONARY.md](docs/DATA_DICTIONARY.md) | Series, units, timestamps, publication times, validation |
-| [docs/MATHEMATICAL_MODEL.md](docs/MATHEMATICAL_MODEL.md) | Battery physics and the dispatch MILP |
-| [docs/BACKTEST_METHODOLOGY.md](docs/BACKTEST_METHODOLOGY.md) | Forecast protocol, rolling backtest, settlement |
-| [docs/RESULTS.md](docs/RESULTS.md) | Forecast accuracy, dispatch backtest, finance, sensitivity |
-| [docs/VALIDATION.md](docs/VALIDATION.md) | Test results and clean-environment checks per stage |
-| [docs/LIMITATIONS.md](docs/LIMITATIONS.md) | What is not modelled and how it affects results |
-| [docs/AUDIT.md](docs/AUDIT.md) | v0.1 audit, defect register, resolution, definition of done |
+| [docs/DATA_DICTIONARY.md](docs/DATA_DICTIONARY.md) | Series, units, timestamps, publication times, validation rules |
+| [docs/MATHEMATICAL_MODEL.md](docs/MATHEMATICAL_MODEL.md) | Battery physics and the optimisation model |
+| [docs/BACKTEST_METHODOLOGY.md](docs/BACKTEST_METHODOLOGY.md) | Forecasting protocol, rolling backtest, settlement |
+| [docs/RESULTS.md](docs/RESULTS.md) | All results, with the command and code version behind each |
+| [docs/VALIDATION.md](docs/VALIDATION.md) | Test results and clean-environment checks |
+| [docs/LIMITATIONS.md](docs/LIMITATIONS.md) | What is not modelled and how it affects the results |
+| [docs/AUDIT.md](docs/AUDIT.md) | Audit of v0.1, defect register and how each defect was resolved |
 
-## Data and attribution
+---
 
-Market data: **Bundesnetzagentur | SMARD.de**, licensed **CC BY 4.0**. The series used are the DE-LU day-ahead price (4169) and the day-ahead forecasts of load (411), PV (125), onshore wind (123) and offshore wind (3791). Units, timestamps, coverage, publication times and limitations are documented in [docs/DATA_DICTIONARY.md](docs/DATA_DICTIONARY.md).
+## Data, attribution and licences
 
-Only the load forecast is published before the day-ahead gate closure. PV and wind day-ahead forecasts appear around 18:00 on D−1 (ENTSO-E art. 14.1(d)) and are therefore not used as bidding inputs.
+**Market data:** **Bundesnetzagentur | SMARD.de**, licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Downloaded data is not committed. The small test fixture in `tests/fixtures/smard_cache/` is an unmodified SMARD extract under the same licence.
 
-The test fixture in `tests/fixtures/smard_cache/` is an unmodified SMARD extract under the same licence.
+**Methodological references.** No code was copied from either:
+- [PyPSA](https://github.com/PyPSA/PyPSA) (MIT): storage state-of-charge formulation and per-period weighting.
+- [epftoolbox](https://github.com/jeslago/epftoolbox) (Apache-2.0): the LEAR forecasting benchmark and evaluation methodology. Lago, J., Marcjasz, G., De Schutter, B., Weron, R. (2021). *Forecasting day-ahead electricity prices: A review of state-of-the-art algorithms, best practices and an open-access benchmark.* Applied Energy 293, 116983.
 
-## Methodological references
+**Main dependencies:**
 
-No code is copied from these projects:
+| Licence | Packages |
+|---|---|
+| MIT | PuLP, HiGHS (`highspy`), pydantic, PyYAML, Plotly |
+| EPL-2.0 | CBC (bundled with PuLP) |
+| BSD-3 | pandas, NumPy, SciPy, scikit-learn |
+| Apache-2.0 | Streamlit |
 
-- [PyPSA](https://github.com/PyPSA/PyPSA) (MIT): storage state-of-charge formulation and per-snapshot weighting as a modelling reference.
-- [epftoolbox](https://github.com/jeslago/epftoolbox) (Apache-2.0): LEAR benchmark and forecast-evaluation methodology (Lago et al., 2021, *Applied Energy* 293, 116983) as a reference for Stage 5.
+**This project:** MIT licence, see [LICENSE](LICENSE). Data remains under its own licence.
 
-## Repository layout
+---
 
-```
-configs/default.yaml        all physical, market, data and economic assumptions
-src/gridflex/config/        pydantic models, loader, config fingerprint
-src/gridflex/data/          SMARD client, raw cache, cleaning, validation, availability, datasets
-src/gridflex/battery/       physics: state equation, throughput/EFC, degradation, feasibility checker
-src/gridflex/optimization/  Stage 4 MILP (PuLP + HiGHS), solve reports, verification
-src/gridflex/forecasting/   Stage 5 forecasters, feature table with publication times, evaluation
-src/gridflex/settlement/    settlement of committed schedules (realised and expected)
-src/gridflex/backtest/      rolling day-ahead engine, strategies, two-window heuristic
-src/gridflex/reporting/     run metadata, run export/loading, Plotly figures, offline example
-src/gridflex/finance/       financial metrics, investment metrics, sensitivity
-scripts/                    CLI entry points; capture_smard_fixtures.py
-app/                        Streamlit viewer (streamlit_app.py + app_pages/), read-only
-tests/                      unit, property, offline fixture and integration tests
-docs/                       AUDIT, ARCHITECTURE, DATA_DICTIONARY, MATHEMATICAL_MODEL,
-                            BACKTEST_METHODOLOGY, RESULTS, VALIDATION, LIMITATIONS
-results/legacy_v0.1.0/      superseded v0.1 outputs, kept for traceability
-```
+## Project history
 
-## Licence
+This repository began as **bess-dispatch-optimizer v0.1.0**. An audit ([docs/AUDIT.md](docs/AUDIT.md)) found that its headline result, a forecast strategy capturing "84.5 %" of perfect-foresight revenue, used solar and wind forecasts that are only published *after* the bidding deadline. Without that look-ahead, the same model captured 70.8 %, below a simple seasonal-naive forecast.
 
-MIT, see [LICENSE](LICENSE). Data remains subject to its own licence (CC BY 4.0, SMARD.de).
+The claim is **withdrawn**, and the old outputs are kept, clearly labelled, in [results/legacy_v0.1.0/](results/legacy_v0.1.0/README.md). The project was then rebuilt step by step as GridFlex (version 0.2.0.dev0), with the safeguards described above. Each step was tested and documented in [docs/VALIDATION.md](docs/VALIDATION.md).
 
-Main dependencies and their licences: PuLP (MIT), HiGHS / `highspy` (MIT), CBC (EPL-2.0, bundled with PuLP), pandas, NumPy, SciPy and scikit-learn (BSD-3), pydantic and PyYAML (MIT), Streamlit (Apache-2.0), Plotly (MIT). Exact versions are in `uv.lock`.
+---
 
 ## Author
 
-**Mohammad Faisal**, M.Sc. Power Engineering (Renewable Energy). GitHub: [CodingxFaisal](https://github.com/CodingxFaisal).
+**Mohammad Faisal**, M.Sc. Power Engineering (Renewable Energy).
+GitHub: [CodingxFaisal](https://github.com/CodingxFaisal)

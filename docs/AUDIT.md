@@ -345,12 +345,12 @@ Key design decisions:
 | Financial metrics have explicit definitions | met | RESULTS §3.1; payback and NPV only with configured inputs |
 | Results are reproducible | met | Clean clone, `uv sync --locked`, empty cache, full pipeline: every output identical to the recorded runs (VALIDATION Stage 9) |
 | The application runs with the documented example workflow | met | `scripts/run_example.py` (integration test); Streamlit viewer checked in Stage 8 |
-| Tests pass in a clean environment | met locally; **CI not yet run** | Clean copies pass on Windows (uv route in Stage 9, pip route in Stage 8). GitHub Actions (Ubuntu and Windows) needs a push, which has not been made |
+| Tests pass in a clean environment | met locally; **CI not yet run** | Clean copies pass on Windows (uv route in Stage 9, pip route in Stage 8). GitHub Actions (Ubuntu and Windows) is configured and the branches are pushed, but GitHub has created no workflow runs (VALIDATION, Stage 9) |
 | Known limitations and upstream attribution are documented | met | LIMITATIONS; README (SMARD CC BY 4.0, PyPSA and epftoolbox as methodological references, dependency licences) |
 
 **Open items:**
 
-- **CI on GitHub.** The Stage 9 criterion "CI green" is unverified until the branches are pushed.
+- **CI on GitHub.** The Stage 9 criterion "CI green" is unverified. GitHub has created no workflow runs, for reasons not yet known (VALIDATION, Stage 9).
 - **Unsourced degradation cost** (LIMITATIONS §2). It must be replaced with a cited value before absolute revenue is quoted.
 - **Research question 4** (uncertainty-aware optimisation) is not answered. Only point forecasts are implemented.
 - **The 15-minute regime** (from 2025-10-01) is supported by the data layer but not yet evaluated.

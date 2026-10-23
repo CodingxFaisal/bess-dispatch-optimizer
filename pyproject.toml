@@ -20,6 +20,7 @@ dependencies = [
     "pydantic>=2.7",
     "pulp>=2.8,<4",
     "scikit-learn>=1.5",
+    "scipy>=1.13",
     "matplotlib>=3.8",
     "highspy>=1.7",
     "streamlit>=1.57",
