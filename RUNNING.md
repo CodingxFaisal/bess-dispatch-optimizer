@@ -38,6 +38,22 @@ The default test run is fully offline: it uses the committed SMARD fixture. To a
 uv run pytest -m network
 ```
 
+## 2a. Minimal end-to-end example (offline, a few seconds)
+
+```bash
+uv run python scripts/run_example.py
+```
+
+Runs every pipeline stage on the committed SMARD fixture (delivery days 2024-03-30 → 2024-04-07, including the 23-hour clock-change day) and writes `runs/example/`: backtest for three strategies, finance tables, forecast evaluation for two baselines, and a small sensitivity sweep. No network access is needed. The output is a workflow demonstration, not a research result; `backtest/metadata.json` is tagged `"example"`.
+
+View it with:
+
+```bash
+GRIDFLEX_RUN_DIR=runs/example uv run streamlit run app/streamlit_app.py
+```
+
+Sections 3–7 describe the **full historical runs** behind `docs/RESULTS.md`. They need the SMARD download (about 35 s) and 18–30 minutes of computation in total (18 min in the recorded clean reproduction, VALIDATION Stage 9).
+
 ## 3. Data
 
 ```bash
@@ -71,7 +87,7 @@ Selects models on 2023 and scores them once on 2024-01-01 → 2025-09-30. This t
 uv run python scripts/run_backtest.py --offline
 ```
 
-Runs the strategies in `backtest:` (configs/default.yaml) over the configured period; this takes about 9 minutes for 5 strategies × 639 days. Options:
+Runs the strategies in `backtest:` (configs/default.yaml) over the configured period; this takes 3–9 minutes for 5 strategies × 639 days, depending on machine load. Options:
 
 - `--start` / `--end` to change the period;
 - `--strategies a,b` to run a subset;
