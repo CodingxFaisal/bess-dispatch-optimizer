@@ -359,6 +359,72 @@ class OptimizationConfig(StrictModel):
 
 
 # --------------------------------------------------------------------------- #
+# Forecasting                                                                 #
+# --------------------------------------------------------------------------- #
+class DayPeriod(StrictModel):
+    """Local delivery days ``[start_day, end_day)``."""
+
+    start_day: dt.date
+    end_day: dt.date
+
+    @model_validator(mode="after")
+    def _ordered(self) -> DayPeriod:
+        if not self.start_day < self.end_day:
+            raise ValueError("start_day must be before end_day")
+        return self
+
+
+class LassoConfig(StrictModel):
+    """LEAR-style regularised linear model (Lago et al., 2021): asinh-scaled
+    prices, standardised inputs, L1 penalty chosen by AIC on training data."""
+
+    calibration_window_days_grid: list[Annotated[int, Field(ge=14)]] = [182, 364, 728]
+    recalibrate_every_days: Annotated[int, Field(ge=1)] = 1
+
+
+class GbrConfig(StrictModel):
+    """Histogram gradient boosting (scikit-learn)."""
+
+    calibration_window_days_grid: list[Annotated[int, Field(ge=14)]] = [364, 728]
+    max_depth_grid: list[Annotated[int, Field(ge=1)]] = [4, 6]
+    learning_rate: Annotated[float, Field(gt=0.0, le=1.0)] = 0.05
+    max_iter: Annotated[int, Field(ge=1)] = 400
+    l2_regularization: Annotated[float, Field(ge=0.0)] = 1.0
+    recalibrate_every_days: Annotated[int, Field(ge=1)] = 7
+
+
+class ForecastingConfig(StrictModel):
+    """Forecast features, model grids and the evaluation protocol.
+
+    Hyperparameters are chosen on ``selection_period`` only; the chosen
+    configurations are then evaluated once on ``holdout_period``, which must
+    start no earlier than the selection period ends. ``history_start_day``
+    is the first day of data used for training and lags.
+    """
+
+    price_lags_days: list[Annotated[int, Field(ge=1)]] = [1, 2, 7]
+    exogenous_series: list[str] = ["load_forecast"]
+    history_start_day: dt.date
+    selection_period: DayPeriod
+    holdout_period: DayPeriod
+    random_state: int = 42
+    lasso: LassoConfig = LassoConfig()
+    gbr: GbrConfig = GbrConfig()
+
+    @model_validator(mode="after")
+    def _protocol(self) -> ForecastingConfig:
+        if not self.history_start_day < self.selection_period.start_day:
+            raise ValueError("history_start_day must precede the selection period")
+        if self.holdout_period.start_day < self.selection_period.end_day:
+            raise ValueError("holdout_period must not overlap the selection period")
+        if 1 not in self.price_lags_days and 7 not in self.price_lags_days:
+            raise ValueError(
+                "price_lags_days must include 1 or 7 for the naive baselines"
+            )
+        return self
+
+
+# --------------------------------------------------------------------------- #
 # Economics                                                                   #
 # --------------------------------------------------------------------------- #
 class EconomicsConfig(StrictModel):
@@ -376,4 +442,15 @@ class GridFlexConfig(StrictModel):
     market: MarketConfig
     data: DataConfig
     optimization: OptimizationConfig = OptimizationConfig()
+    forecasting: ForecastingConfig | None = None
     economics: EconomicsConfig = EconomicsConfig()
+
+    @model_validator(mode="after")
+    def _forecast_series_known(self) -> GridFlexConfig:
+        if self.forecasting is not None:
+            unknown = set(self.forecasting.exogenous_series) - set(self.data.series)
+            if unknown:
+                raise ValueError(
+                    f"forecasting.exogenous_series not in data.series: {unknown}"
+                )
+        return self

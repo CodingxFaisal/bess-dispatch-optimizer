@@ -195,3 +195,57 @@ Command: `uv run python scripts/compare_optimizers.py --offline [--solver cbc]`.
 - The new formulation reproduces the v0.1 optimum day by day under identical conventions. HiGHS is about 6× faster than CBC here.
 - With HiGHS, carrying the physical state introduces no drift. With CBC, the round-off in its solutions makes the carried state wander by up to 1.8e-5 MWh, which shifts the two-year total by 0.11 EUR. This is why HiGHS is the default.
 - These are solver diagnostics, **not strategy results**.
+
+---
+
+## Stage 5: forecast baselines and leakage tests (2026-10-23)
+
+**Environment:** as Stage 4 (no new dependencies; scikit-learn 1.9.1 and SciPy from `uv.lock`). Branch `gridflex/stage-5-forecasting`, uncommitted working tree.
+
+### Automated checks
+
+| Command | Result |
+|---|---|
+| `uv run pytest` | **362 passed**, 5 deselected (network) |
+| `uv run pytest --cov=gridflex` | 92 % total. `forecasting/models.py` 99 %, `evaluate.py` 97 %, `features.py` 94 %, `base.py` 94 % |
+| `uv run ruff check …` / `ruff format --check …` | all passed |
+| `uv run mypy` | Success, 37 files (stricter flags also apply to `gridflex.forecasting.*`) |
+
+### Tests added in Stage 5
+
+| File | What it checks |
+|---|---|
+| `tests/forecasting/test_leakage.py` (16) | **End-to-end:** for all 4 models, corrupting every value published after the origin (hand-counted 696 values: prices of 15–29 Apr, load forecasts of 16–29 Apr) leaves the forecast bit-for-bit identical. Control: corrupting public D−1 data does change it. Also: PV forecast for D raises (lagged by a day it passes); same-day price feature raises; publication boundary exact to the minute; training rows on or after D raise; training targets published after the origin raise; a model subclass with a leaky training selection is stopped; default training rows are public and earlier, with metadata cutoffs ≤ origin (including DST days); LEAR preprocessing statistics equal hand formulas on the training rows and are unchanged by prediction; missing inputs raise, never filled; insufficient history raises |
+| `tests/forecasting/test_features_models.py` (16) | wall-clock lags hand-checked on an ordinary day, the spring gap (24 h fallback), out of the spring day, and both 02:00 hours of the autumn day; calendar features; previous-day statistics over a 23 h day; publication instants (hand UTC values); incomplete previous day gives NaN statistics; quarter-hour interval index 0–95; naive forecasts equal lagged prices; trained models within 30 % of the theoretical noise floor 4·√(2/π) and rMAE < 0.85 on synthetic data; recalibration every 7 days (fits on days 0, 7, 14); GBR deterministic; model version tracks configuration; forecast record validation; accuracy metrics by hand (MAE 2, RMSE √5, bias −1, rMAE 1); DM test direction; period days |
+| `tests/forecasting/test_protocol.py` (8) | default protocol; 6 invalid protocols rejected (overlap, history after selection, unknown series, missing naive lag, reversed period, too-short window); end-to-end selection then hold-out on synthetic data: argmin choice, disjoint days, origin before delivery, benchmark rMAE = 1 |
+
+**Mutation spot-check** (each change reverted afterwards; counts are for `tests/forecasting`):
+
+| Deliberate fault | Result |
+|---|---|
+| Prediction guard disabled | 3 tests fail |
+| Training allowed on day D with both training guards disabled | 11 tests fail, including the end-to-end corruption test, which catches it independently |
+| Lags by absolute 24 h instead of wall-clock | 2 tests fail |
+
+**Expectations corrected while writing tests:**
+
+- A model-quality threshold (rMAE < 0.6) was unjustified for synthetic data with N(0, 4) noise. It was replaced by a bound derived from the theoretical MAE floor $4\sqrt{2/\pi}$ = 3.19.
+- A corruption-size check ("> 1000") was replaced by the exact hand count of 696.
+
+### Real-data evaluation
+
+Command: `uv run python scripts/evaluate_forecasts.py --offline` (375 s).
+
+- Data: 2021-01-01 → 2025-09-30 hourly, 41,615/41,615 valid intervals.
+- Selection: 2023, 9 candidates.
+- Hold-out: 2024-01-01 → 2025-09-30, 639 days, 15,335 intervals. Hand check: 639 × 24 − 1, for the 23 h day on 2025-03-30.
+
+Results are in [RESULTS.md §1](RESULTS.md).
+
+**Post-run checks on the outputs:**
+
+- 61,340 forecast rows (4 × 15,335).
+- On every row, origin < delivery interval, `feature_cutoff_utc` ≤ origin and `training_data_cutoff_utc` ≤ origin.
+- Derived figures in RESULTS were recomputed from the CSVs.
+
+**Rerun on final code.** Lint-only edits were made to `features.py` while the first run was in progress. The evaluation was rerun on the final code and its outputs compared with the first run: `selection.csv`, `holdout_metrics.csv` and all 61,340 rows of `holdout_forecasts.csv` are **identical** (max abs numeric difference 0.0; rerun 398 s).

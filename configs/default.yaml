@@ -197,6 +197,33 @@ optimization:
   solver_log: false
 
 # -----------------------------------------------------------------------------
+# Forecasting: day-ahead price forecasts for delivery day D, issued at the
+# D-1 12:00 decision. Inputs are restricted by data.series.*.availability:
+# price lags (D-1 and earlier) and the load forecast for D. PV/wind forecasts
+# are not available at the decision (audit D1) and are not listed.
+# Protocol: hyperparameters are selected on 2023 only, then the selected
+# configurations are evaluated once on the hold-out (hourly MTU regime, which
+# ends 2025-09-30).
+# -----------------------------------------------------------------------------
+forecasting:
+  price_lags_days: [1, 2, 7]          # same local wall-clock time, k days earlier
+  exogenous_series: [load_forecast]
+  history_start_day: 2021-01-01
+  selection_period: {start_day: 2023-01-01, end_day: 2024-01-01}
+  holdout_period: {start_day: 2024-01-01, end_day: 2025-10-01}
+  random_state: 42
+  lasso:
+    calibration_window_days_grid: [182, 364, 728]
+    recalibrate_every_days: 1
+  gbr:
+    calibration_window_days_grid: [364, 728]
+    max_depth_grid: [4, 6]
+    learning_rate: 0.05
+    max_iter: 400
+    l2_regularization: 1.0
+    recalibrate_every_days: 7
+
+# -----------------------------------------------------------------------------
 # Economics: investment metrics (payback, NPV) are computed only when every
 # required input is configured. Left unset by default (audit D13).
 # -----------------------------------------------------------------------------
