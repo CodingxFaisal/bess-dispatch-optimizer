@@ -423,7 +423,7 @@ The browser console showed 404s for `/<page>/_stcore/health` when a page URL was
 
 Script `repro.sh`, run 2026-10-23 from 19:41:18 to 20:00:15 UTC:
 
-1. Fresh `git clone` of commit `2f34ab8` (Stage 8, clean tree; Stage 9 changes no modelling code).
+1. Fresh `git clone` of commit `de2ce0c` (Stage 8, clean tree; Stage 9 changes no modelling code).
 2. `uv sync --locked` into a new virtual environment.
 3. Confirmed that no `data/` directory existed.
 4. Ran the commands below.
@@ -447,7 +447,7 @@ Script `repro.sh`, run 2026-10-23 from 19:41:18 to 20:00:15 UTC:
 | backtest/finance: summary, by_year, by_month | 5, 10, 105 | 0 | identical |
 | sensitivity/sensitivity.csv | 34 | 0 | identical |
 
-The config fingerprint is the same (`76690a7fb527…`). The reproduced run records `dirty: false` at commit `2f34ab8`. The recorded run had `dirty: true` at `0efe5f6`. **Every number in RESULTS.md is therefore reproduced exactly from a clean environment and a committed tree.**
+The config fingerprint is the same (`76690a7fb527…`). The reproduced run records `dirty: false` at commit `de2ce0c`. The recorded run had `dirty: true` at `f621999`. **Every number in RESULTS.md is therefore reproduced exactly from a clean environment and a committed tree.**
 
 Runtimes differ from earlier records (backtest 3.2 vs 8.7 min, sensitivity 7.6 vs about 15 min) because of machine load. RUNNING.md now gives ranges.
 
@@ -466,11 +466,11 @@ Runtimes differ from earlier records (backtest 3.2 vs 8.7 min, sensitivity 7.6 v
 
 ### GitHub Actions CI
 
-**Before the merge**, no run started for the pushed feature branches or for PR #1. This held even after the PR was closed and reopened and a `gridflex/**` push trigger was added (`f4f8b27`).
+**Before the merge**, no run started for the pushed feature branches or for PR #1. This held even after the PR was closed and reopened and a `gridflex/**` push trigger was added (`ba6b0ab`).
 
 **After the merge**, the workflow ran for the first time.
 
-PR #1 was merged as commit `1dec3e8` on 2026-10-23, and run `40024899301` passed:
+PR #1 was merged as commit `972d999` on 2026-10-23, and run `40024899301` passed:
 
 | Job | Ruff | mypy | pytest | Coverage |
 |---|---|---|---|--:|
@@ -478,3 +478,17 @@ PR #1 was merged as commit `1dec3e8` on 2026-10-23, and run `40024899301` passed
 | windows-latest | passed | 43 files, no issues | 452 passed, 5 deselected | 98 % |
 
 **Not verified:** macOS. Linux and Windows are covered by CI.
+
+### Commit IDs rewritten (2026-10-23)
+
+All commits on `main` were rewritten to remove co-author attribution lines from their messages. File contents, authors and dates are unchanged: every commit's tree hash is identical before and after. The commit IDs quoted in these documents are the new ones. Run outputs created before the rewrite, under the git-ignored `runs/`, still record the old IDs in `metadata.json`:
+
+| Old | New |
+|---|---|
+| `078d3f4` (v0.1.0) | `c845118` |
+| `c80c0db` (Stage 5) | `c9ba599` |
+| `cb48182` (Stage 6) | `b4ec8f6` |
+| `0efe5f6` (Stage 7) | `f621999` |
+| `2f34ab8` (Stage 8) | `de2ce0c` |
+| `f4f8b27` (CI trigger) | `ba6b0ab` |
+| `1dec3e8` (merge of PR #1) | `972d999` |

@@ -12,7 +12,7 @@ Every number here was produced by a command in this repository, run on validated
 
 **Reproduced from a clean environment (Stage 9).** All results in this document were regenerated from scratch, as follows:
 
-- a fresh clone of commit `2f34ab8` (clean tree);
+- a fresh clone of commit `de2ce0c` (clean tree);
 - `uv sync --locked` into a new virtual environment;
 - an empty data cache, so all SMARD data was downloaded anew;
 - the five pipeline commands, run in 18 minutes in total.
@@ -101,7 +101,7 @@ Outputs: `runs/latest/forecast_evaluation/` contains `selection.csv`, `holdout_m
 **Run:**
 
 - Command: `uv run python scripts/run_backtest.py --offline`, run 2026-10-23 in 521 s, deterministic. A second run on the same code reproduced every number exactly.
-- Code: working tree based on commit `c80c0db` (recorded as dirty in `metadata.json`); config fingerprint `50d4855ec19d…`.
+- Code: working tree based on commit `c9ba599` (recorded as dirty in `metadata.json`); config fingerprint `50d4855ec19d…`.
 - Period: local delivery days 2024-01-01 → 2025-09-30, 639 days, the same hold-out as §1.
 - Method: [BACKTEST_METHODOLOGY §2](BACKTEST_METHODOLOGY.md). Day-ahead only, price taker, full-day commitment at D−1 12:00, daily cyclic state, physically carried energy.
 - Battery: 10 MW / 20 MWh, round-trip efficiency 0.86, SoC 5–95 %, cap of 1.5 EFC/day (DC discharge over usable energy), degradation 16.67 EUR per DC MWh (unsourced placeholder), no trading cost.
@@ -157,7 +157,7 @@ Outputs: `runs/latest/backtest/` contains `daily.csv` (3,195 rows), `intervals.c
 **Run:**
 
 - Commands: `uv run python scripts/run_backtest.py --offline` (505 s), then `uv run python scripts/run_finance.py` and `uv run python scripts/run_sensitivity.py --offline`.
-- Code and config: working tree based on commit `cb48182`, config fingerprint `76690a7fb527…`.
+- Code and config: working tree based on commit `b4ec8f6`, config fingerprint `76690a7fb527…`.
 - The backtest reproduced §2 exactly; the fingerprint changed only because the investment and sensitivity config sections were added.
 
 ### 3.1 Metric definitions

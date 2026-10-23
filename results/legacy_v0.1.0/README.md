@@ -1,6 +1,6 @@
 # Superseded: v0.1.0 results
 
-These files are the outputs committed with v0.1.0 (commit `078d3f4`). They are
+These files are the outputs committed with v0.1.0 (commit `c845118`). They are
 kept for traceability only. **Do not quote them.**
 
 The Stage 1 audit ([docs/AUDIT.md](../../docs/AUDIT.md)) reproduced them

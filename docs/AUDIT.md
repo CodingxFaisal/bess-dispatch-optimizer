@@ -1,6 +1,6 @@
 # GridFlex — Stage 1 Repository Audit
 
-**Subject:** `CodingxFaisal/bess-dispatch-optimizer` @ `078d3f4` (3 commits, branch `main`)
+**Subject:** `CodingxFaisal/bess-dispatch-optimizer` @ `c845118` (3 commits, branch `main`)
 **Audit date:** 2026-10-22
 **Status:** Approved 2026-10-22 with all recommended decisions in §14. Sections 0–14 are the audit as approved; §15 records findings made during later stages. The defect IDs (D1–D26) are referenced from code comments and later docs.
 
@@ -345,7 +345,7 @@ Key design decisions:
 | Financial metrics have explicit definitions | met | RESULTS §3.1; payback and NPV only with configured inputs |
 | Results are reproducible | met | Clean clone, `uv sync --locked`, empty cache, full pipeline: every output identical to the recorded runs (VALIDATION Stage 9) |
 | The application runs with the documented example workflow | met | `scripts/run_example.py` (integration test); Streamlit viewer checked in Stage 8 |
-| Tests pass in a clean environment | met | Clean copies pass locally on Windows (uv route in Stage 9, pip route in Stage 8). GitHub Actions run 40024899301 on `main` (merge commit `1dec3e8`) passed on Ubuntu and Windows: Ruff, mypy, 452 tests each |
+| Tests pass in a clean environment | met | Clean copies pass locally on Windows (uv route in Stage 9, pip route in Stage 8). GitHub Actions run 40024899301 on `main` (merge commit `972d999`) passed on Ubuntu and Windows: Ruff, mypy, 452 tests each |
 | Known limitations and upstream attribution are documented | met | LIMITATIONS; README (SMARD CC BY 4.0, PyPSA and epftoolbox as methodological references, dependency licences) |
 
 **Open items:**
