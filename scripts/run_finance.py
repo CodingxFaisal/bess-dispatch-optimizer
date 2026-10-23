@@ -25,13 +25,7 @@ from pathlib import Path
 import pandas as pd
 
 from _common import RUNS, load_cfg
-from gridflex.config import config_fingerprint
-from gridflex.finance import (
-    capture_by_period,
-    investment_metrics,
-    period_table,
-    summarise,
-)
+from gridflex.reporting.export import FingerprintMismatchError, write_finance
 
 
 def main() -> None:
@@ -45,53 +39,12 @@ def main() -> None:
 
     run = Path(args.run)
     cfg = load_cfg()
-    meta = json.loads((run / "metadata.json").read_text(encoding="utf-8"))
-    if meta["config_fingerprint"] != config_fingerprint(cfg) and not args.force:
-        sys.exit(
-            "backtest was run with a different configuration "
-            "(fingerprint mismatch); re-run it or pass --force"
-        )
-    daily = pd.read_csv(run / "daily.csv")
+    try:
+        summary = write_finance(run, cfg, benchmark=args.benchmark, force=args.force)
+    except FingerprintMismatchError as exc:
+        sys.exit(f"{exc}; re-run the backtest or pass --force")
     out = run / "finance"
-    out.mkdir(exist_ok=True)
-
-    bench = daily[daily.strategy == args.benchmark]
-    bench = bench if not bench.empty else None
-    rows, years, months, cap_y, cap_m = [], [], [], [], []
-    for name, d in daily.groupby("strategy", sort=False):
-        s = summarise(d, cfg.battery, benchmark=bench)
-        rows.append(s.as_dict())
-        years.append(period_table(d, cfg.battery, "year").assign(strategy=name))
-        months.append(period_table(d, cfg.battery, "month").assign(strategy=name))
-        if bench is not None:
-            cap_y.append(capture_by_period(d, bench, "year").assign(strategy=name))
-            cap_m.append(capture_by_period(d, bench, "month").assign(strategy=name))
-    summary = pd.DataFrame(rows)
-    summary.to_csv(out / "summary.csv", index=False)
-    pd.concat(years).to_csv(out / "by_year.csv", index=False)
-    pd.concat(months).to_csv(out / "by_month.csv", index=False)
-    if cap_y:
-        pd.concat(cap_y).to_csv(out / "capture_by_year.csv", index=False)
-        pd.concat(cap_m).to_csv(out / "capture_by_month.csv", index=False)
-
-    inv = {}
-    for name, d in daily.groupby("strategy", sort=False):
-        r = investment_metrics(
-            summarise(d, cfg.battery), cfg.battery, cfg.economics.investment
-        )
-        inv[name] = r.as_dict()
-    (out / "investment.json").write_text(
-        json.dumps(
-            {
-                "source_run_fingerprint": meta["config_fingerprint"],
-                "investment_inputs": cfg.economics.investment.model_dump(),
-                "results": inv,
-            },
-            indent=2,
-            default=str,
-        ),
-        encoding="utf-8",
-    )
+    inv = json.loads((out / "investment.json").read_text(encoding="utf-8"))["results"]
 
     pd.set_option("display.width", 220)
     cols = [

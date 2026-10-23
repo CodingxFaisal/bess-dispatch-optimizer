@@ -4,7 +4,7 @@ Battery energy storage (BESS) dispatch optimisation and day-ahead market researc
 
 GridFlex turns price forecasts into physically feasible battery schedules and evaluates them against realised market prices. The goal is that every reported number can be traced to source data, asset configuration, model settings and a stated methodology.
 
-> **Status: under reconstruction (Stage 7 of 9 complete).** This repository is being rebuilt from v0.1.0 (`bess-dispatch-optimizer`) following an audit, [docs/AUDIT.md](docs/AUDIT.md).
+> **Status: under reconstruction (Stage 8 of 9 complete).** This repository is being rebuilt from v0.1.0 (`bess-dispatch-optimizer`) following an audit, [docs/AUDIT.md](docs/AUDIT.md).
 >
 > **The v0.1.0 headline results are withdrawn.** The "84.5 % foresight capture" of the gradient-boosting strategy relied on PV and wind forecasts that are only published after the day-ahead bidding deadline. Without them the same model captured 70.8 % in an audit rerun, which is below a seasonal-naive forecast. The old outputs are kept, labelled, in [results/legacy_v0.1.0/](results/legacy_v0.1.0/README.md). Results from the rebuilt, validated pipeline are in [docs/RESULTS.md](docs/RESULTS.md).
 >
@@ -30,9 +30,9 @@ GridFlex turns price forecasts into physically feasible battery schedules and ev
 | 4 | Optimisation model (PuLP + HiGHS) and solver diagnostics | done ([MATHEMATICAL_MODEL](docs/MATHEMATICAL_MODEL.md) §3) |
 | 5 | Forecast baselines and leakage tests | done ([BACKTEST_METHODOLOGY](docs/BACKTEST_METHODOLOGY.md) §1, [RESULTS](docs/RESULTS.md) §1) |
 | 6 | Rolling backtest and settlement | done ([BACKTEST_METHODOLOGY](docs/BACKTEST_METHODOLOGY.md) §2, [RESULTS](docs/RESULTS.md) §2) |
-| 7 | Financial metrics and sensitivity analysis | **done** ([RESULTS](docs/RESULTS.md) §3, [VALIDATION](docs/VALIDATION.md)) |
-| 8 | Streamlit UI and exports | next |
-| 9 | Integration tests, clean-environment reproduction, documentation | |
+| 7 | Financial metrics and sensitivity analysis | done ([RESULTS](docs/RESULTS.md) §3) |
+| 8 | Streamlit UI and exports | **done** (below, [VALIDATION](docs/VALIDATION.md)) |
+| 9 | Integration tests, clean-environment reproduction, documentation | next |
 
 ## What exists now
 
@@ -81,6 +81,10 @@ GridFlex turns price forecasts into physically feasible battery schedules and ev
   - one-at-a-time sensitivity to power, duration, efficiency, degradation cost and cycle cap.
 
   Results: [RESULTS §3](docs/RESULTS.md).
+- **Streamlit UI** (`app/`): a read-only viewer of saved runs with six pages: overview, market data, forecast evaluation, dispatch, financial analysis and experiment comparison.
+  - Plotly charts state their units, time range and timezone.
+  - CSV, configuration (YAML) and run-metadata (JSON) downloads are available.
+  - The UI contains no modelling code (enforced by a test).
 - **Information-availability registry** (`gridflex.data.availability`): it knows what was public at the 12:00 gate closure and raises `InformationLeakageError` otherwise.
 
 ## Setup
@@ -132,6 +136,14 @@ uv run python scripts/run_sensitivity.py --offline
 4. The fourth computes financial metrics from that backtest; it refuses runs made with a different config.
 5. The fifth runs the one-at-a-time sensitivity analysis (about 15 minutes).
 
+Then open the viewer:
+
+```bash
+uv run streamlit run app/streamlit_app.py
+```
+
+It reads `runs/latest/` by default; change this in the sidebar or with `GRIDFLEX_RUN_DIR`.
+
 Outputs go to `runs/latest/` (git-ignored), each with `metadata.json`. See [RUNNING.md](RUNNING.md) for details.
 
 ## Data and attribution
@@ -160,9 +172,10 @@ src/gridflex/optimization/  Stage 4 MILP (PuLP + HiGHS), solve reports, verifica
 src/gridflex/forecasting/   Stage 5 forecasters, feature table with publication times, evaluation
 src/gridflex/settlement/    settlement of committed schedules (realised and expected)
 src/gridflex/backtest/      rolling day-ahead engine, strategies, two-window heuristic
-src/gridflex/reporting/     run metadata (git commit, config fingerprint, versions)
+src/gridflex/reporting/     run metadata, run export/loading, Plotly figures
 src/gridflex/finance/       financial metrics, investment metrics, sensitivity
 scripts/                    CLI entry points; capture_smard_fixtures.py
+app/                        Streamlit viewer (streamlit_app.py + app_pages/), read-only
 tests/                      unit, property and offline fixture tests; data/ for the data layer
 docs/                       AUDIT, DATA_DICTIONARY, MATHEMATICAL_MODEL, BACKTEST_METHODOLOGY,
                             RESULTS, VALIDATION (more per stage)

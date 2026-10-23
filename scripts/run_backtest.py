@@ -10,6 +10,7 @@ Outputs (git-ignored), default ``runs/latest/backtest/``:
   expected and realised settlement, solver and forecast metadata).
 * ``intervals.csv``: committed schedule and prices per interval.
 * ``summary.csv``: totals per strategy.
+* ``market_data.csv``: validated market inputs (UTC, clean units).
 * ``metadata.json``: git commit, config fingerprint and dump, package
   versions, policy, data provenance.
 
@@ -21,7 +22,6 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
-import json
 import sys
 import time
 from pathlib import Path
@@ -29,8 +29,9 @@ from pathlib import Path
 import pandas as pd
 
 from _common import RUNS, load_cfg, load_dataset
-from gridflex.backtest import run_backtest, summary_table
+from gridflex.backtest import run_backtest
 from gridflex.config import DayPeriod
+from gridflex.reporting.export import write_backtest_run
 
 
 def main() -> None:
@@ -72,18 +73,7 @@ def main() -> None:
     meta["runtime_s"] = round(time.perf_counter() - t0, 1)
 
     out = Path(args.out)
-    out.mkdir(parents=True, exist_ok=True)
-    pd.concat([r.daily for r in results.values()], ignore_index=True).to_csv(
-        out / "daily.csv", index=False
-    )
-    pd.concat([r.intervals for r in results.values()], ignore_index=True).to_csv(
-        out / "intervals.csv", index=False
-    )
-    summary = summary_table(results)
-    summary.to_csv(out / "summary.csv", index=False)
-    (out / "metadata.json").write_text(
-        json.dumps(meta, indent=2, default=str), encoding="utf-8"
-    )
+    summary = write_backtest_run(out, results, meta, ds)
 
     pd.set_option("display.width", 200)
     print(

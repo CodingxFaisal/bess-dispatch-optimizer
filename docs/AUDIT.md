@@ -2,7 +2,7 @@
 
 **Subject:** `CodingxFaisal/bess-dispatch-optimizer` @ `078d3f4` (3 commits, branch `main`)
 **Audit date:** 2026-10-22
-**Status:** Approved 2026-10-22 with all recommended decisions in §14. Sections 0–14 are the audit as approved; §15 records findings made during later stages. The defect IDs (D1–D25) are referenced from code comments and later docs.
+**Status:** Approved 2026-10-22 with all recommended decisions in §14. Sections 0–14 are the audit as approved; §15 records findings made during later stages. The defect IDs (D1–D26) are referenced from code comments and later docs.
 
 ---
 
@@ -305,6 +305,7 @@ Key design decisions:
 | D23 | Low | Backtest state | The v0.1 backtest starts each day from the solver-reported SoC variable instead of the state-equation energy of the committed schedule. | Stage 3 real-data check (`scripts/check_v01_schedules.py`, 2023–2024): the two agree to 6e-7 MWh within a day but differ by 4.8e-5 MWh after 731 days. | Stage 6 carries the physically simulated state (MATHEMATICAL_MODEL §2.6). |
 | D24 | High | Solver status | PuLP maps a HiGHS time-limit stop that has an incumbent to `LpStatus "Optimal"` / `"Solution Found"`. Any code trusting PuLP's status would present an unproven schedule as optimal. | Stage 4: 8760 h problem at a 2 s limit, HiGHS "Time limit reached" with gap 0.49 %, PuLP "Optimal" (`tests/optimization/test_failure_modes.py`). | `gridflex.optimization` reads HiGHS's native model status and primal-solution status; time-limited incumbents are rejected by default. |
 | D25 | Low | Solver status | PuLP raises `KeyError` when HiGHS stops on a solution limit (`kSolutionLimit`). | Stage 4 probe (`mip_max_improving_sols=1`). | Solver exceptions are caught and reported as status `error`, with no schedule. |
+| D26 | Medium | Packaging | `requirements.txt` / `requirements-dev.txt` were not regenerated after dependency changes in Stages 4–6. `highspy` (the default solver) was missing and `seaborn` stale, so a pip-based install of Stages 4–7 would have lacked HiGHS. The clean-environment checks in those stages used only the uv route. | Found in Stage 8 when Streamlit and Plotly were added. | Files regenerated; `tests/test_packaging.py` now fails whenever they omit a declared dependency; pip and uv clean installs both verified. |
 
 ### Resolution status
 

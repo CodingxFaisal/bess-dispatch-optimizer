@@ -27,8 +27,8 @@ On macOS/Linux use `.venv/bin/python` instead of `.venv/Scripts/python`.
 
 ```bash
 uv run pytest
-uv run ruff check src tests scripts notebooks
-uv run ruff format --check src tests scripts notebooks
+uv run ruff check src tests scripts notebooks app
+uv run ruff format --check src tests scripts notebooks app
 uv run mypy
 ```
 
@@ -99,7 +99,29 @@ uv run python scripts/run_sensitivity.py --offline
 - Investment metrics stay "not computed" until the `economics.investment` inputs are set in the config.
 - `run_sensitivity.py` writes `runs/latest/sensitivity/sensitivity.csv`.
 
-## 7. Regenerating the test fixture
+## 7. User interface
+
+```bash
+uv run streamlit run app/streamlit_app.py
+```
+
+- A read-only viewer of `runs/latest/`. Set another run directory in the sidebar or with the `GRIDFLEX_RUN_DIR` environment variable.
+- Pages whose outputs are missing say which script produces them.
+- Downloads: CSV tables, the run configuration (YAML) and the run metadata (JSON).
+
+## 8. Regenerating the pip requirement files
+
+After any dependency change, regenerate both files. `tests/test_packaging.py` fails if they fall out of sync.
+
+```bash
+uv export --no-hashes --no-dev --no-emit-project --format requirements-txt -o requirements.txt
+```
+
+```bash
+uv export --no-hashes --no-emit-project --format requirements-txt -o requirements-dev.txt
+```
+
+## 9. Regenerating the test fixture
 
 Only needed if the fixture must change; this downloads from SMARD.
 

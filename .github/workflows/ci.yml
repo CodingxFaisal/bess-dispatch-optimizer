@@ -27,10 +27,10 @@ jobs:
         run: uv sync --locked
 
       - name: Ruff lint
-        run: uv run ruff check src tests scripts notebooks
+        run: uv run ruff check src tests scripts notebooks app
 
       - name: Ruff format
-        run: uv run ruff format --check src tests scripts notebooks
+        run: uv run ruff format --check src tests scripts notebooks app
 
       - name: mypy
         run: uv run mypy
